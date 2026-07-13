@@ -31,8 +31,5 @@ third_party/
 results_*/
 validation_*/
 
-# FEA training data (raw input for gravity bin generation)
-train_data/
-
 # Design documents
 docs/

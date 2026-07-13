@@ -29,6 +29,7 @@
   "num_bolts": 35,
   "num_bolts_x": 7,
   "num_bolts_z": 5,
+  "bolt_margin": 0.08,
   "use_bspline": 0,
   "influence_data_path": "data_vsm_mnvn_tik32",
   "output_dir": "validation/flux_proxy"

@@ -145,7 +145,7 @@ private:
     // MSE loss: ideal flux target from elliptical surface
     bool m_useMSELoss = false;
     std::vector<float> m_idealFlux;
-    GpuBuffer m_gravityY, m_gravityBins[10], m_yuGrid, m_yvGrid, m_surfaceGradient;
+    GpuBuffer m_gravityY, m_gravityBins[20], m_yuGrid, m_yvGrid, m_surfaceGradient;
     GpuBuffer m_tirCountBuf;  // TIR fallback statistics (1 uint32)
     GpuBuffer m_boltGradPartial;
     GpuBuffer m_dummyBuf; // small dummy buffer for unused bindings

@@ -454,17 +454,9 @@ void BezierPipeline::createBoltPipelines() {
     bindings.push_back(sb(25)); // surfaceGradient
     bindings.push_back(sb(29)); // rayValidity (P2)
     bindings.push_back(sb(30)); // gravityBase (legacy, kept for compat)
-    // Bindings 31-40: multi-angle FEA gravity bins (0/12/22/30/35/45/52/60/67/75°)
-    bindings.push_back(sb(31)); // gravityBin0
-    bindings.push_back(sb(32)); // gravityBin12
-    bindings.push_back(sb(33)); // gravityBin22
-    bindings.push_back(sb(34)); // gravityBin30
-    bindings.push_back(sb(35)); // gravityBin35
-    bindings.push_back(sb(36)); // gravityBin45
-    bindings.push_back(sb(37)); // gravityBin52
-    bindings.push_back(sb(38)); // gravityBin60
-    bindings.push_back(sb(39)); // gravityBin67
-    bindings.push_back(sb(40)); // gravityBin75
+    // Bindings 31-50: multi-angle FEA gravity bins (10/14/18/.../78/80 deg)
+    for (uint32_t b = 31; b <= 50; b++)
+        bindings.push_back(sb(b));
 
     VkDescriptorSetLayoutCreateInfo linfo{};
     linfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -546,7 +538,8 @@ void BezierPipeline::createBoltBuffers() {
 
     // Load multi-angle gravity bins (10 angles: 0/12/22/30/35/45/52/60/67/75 degrees)
     {
-        const int gravityAngles[10] = {0, 12, 22, 30, 35, 45, 52, 60, 67, 75};
+        const int gravityAngles[20] = {10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
+                                        50, 54, 58, 62, 66, 70, 73, 76, 78, 80};
         for (int i = 0; i < 10; i++) {
             m_gravityBins[i] = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
             std::string gravPath = m_cfg.influenceDataPath + "/gravity_" + std::to_string(gravityAngles[i]) + "deg.bin";
@@ -633,16 +626,26 @@ void BezierPipeline::createBoltBuffers() {
         {m_surfaceGradient.buffer, 0, m_surfaceGradient.size}, // 25
         {m_rayValidity.buffer, 0, m_rayValidity.size},         // 29
         {m_gravityBins[0].buffer, 0, m_gravityBins[0].size},   // 30: gravityBase (legacy)
-        {m_gravityBins[0].buffer, 0, m_gravityBins[0].size},   // 31: gravityBin0
-        {m_gravityBins[1].buffer, 0, m_gravityBins[1].size},   // 32: gravityBin12
-        {m_gravityBins[2].buffer, 0, m_gravityBins[2].size},   // 33: gravityBin22
-        {m_gravityBins[3].buffer, 0, m_gravityBins[3].size},   // 34: gravityBin30
-        {m_gravityBins[4].buffer, 0, m_gravityBins[4].size},   // 35: gravityBin35
-        {m_gravityBins[5].buffer, 0, m_gravityBins[5].size},   // 36: gravityBin45
-        {m_gravityBins[6].buffer, 0, m_gravityBins[6].size},   // 37: gravityBin52
-        {m_gravityBins[7].buffer, 0, m_gravityBins[7].size},   // 38: gravityBin60
-        {m_gravityBins[8].buffer, 0, m_gravityBins[8].size},   // 39: gravityBin67
-        {m_gravityBins[9].buffer, 0, m_gravityBins[9].size},   // 40: gravityBin75
+        {m_gravityBins[0].buffer, 0, m_gravityBins[0].size},   // 31: gravityBin10
+        {m_gravityBins[1].buffer, 0, m_gravityBins[1].size},   // 32: gravityBin14
+        {m_gravityBins[2].buffer, 0, m_gravityBins[2].size},   // 33: gravityBin18
+        {m_gravityBins[3].buffer, 0, m_gravityBins[3].size},   // 34: gravityBin22
+        {m_gravityBins[4].buffer, 0, m_gravityBins[4].size},   // 35: gravityBin26
+        {m_gravityBins[5].buffer, 0, m_gravityBins[5].size},   // 36: gravityBin30
+        {m_gravityBins[6].buffer, 0, m_gravityBins[6].size},   // 37: gravityBin34
+        {m_gravityBins[7].buffer, 0, m_gravityBins[7].size},   // 38: gravityBin38
+        {m_gravityBins[8].buffer, 0, m_gravityBins[8].size},   // 39: gravityBin42
+        {m_gravityBins[9].buffer, 0, m_gravityBins[9].size},   // 40: gravityBin46
+        {m_gravityBins[10].buffer, 0, m_gravityBins[10].size}, // 41: gravityBin50
+        {m_gravityBins[11].buffer, 0, m_gravityBins[11].size}, // 42: gravityBin54
+        {m_gravityBins[12].buffer, 0, m_gravityBins[12].size}, // 43: gravityBin58
+        {m_gravityBins[13].buffer, 0, m_gravityBins[13].size}, // 44: gravityBin62
+        {m_gravityBins[14].buffer, 0, m_gravityBins[14].size}, // 45: gravityBin66
+        {m_gravityBins[15].buffer, 0, m_gravityBins[15].size}, // 46: gravityBin70
+        {m_gravityBins[16].buffer, 0, m_gravityBins[16].size}, // 47: gravityBin73
+        {m_gravityBins[17].buffer, 0, m_gravityBins[17].size}, // 48: gravityBin76
+        {m_gravityBins[18].buffer, 0, m_gravityBins[18].size}, // 49: gravityBin78
+        {m_gravityBins[19].buffer, 0, m_gravityBins[19].size}, // 50: gravityBin80
     };
 
     VkDescriptorImageInfo imgInfos[] = {
@@ -650,8 +653,8 @@ void BezierPipeline::createBoltBuffers() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(38);
-    for (int i = 0; i < 38; i++) {
+    std::vector<VkWriteDescriptorSet> writes(48);
+    for (int i = 0; i < 48; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -690,9 +693,8 @@ void BezierPipeline::createBoltBuffers() {
     writes[27].dstBinding = 30;
     writes[27].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[27].pBufferInfo = &sbInfos[20];  // gravityBins[0]
-    // Bindings 31-35: multi-angle gravity bins
-    // Bindings 31-40: 10 gravity bins (0..9)
-    for (int gi = 0; gi < 10; gi++) {
+    // Bindings 31-50: 20 gravity bins
+    for (int gi = 0; gi < 20; gi++) {
         uint32_t wi = 28u + (uint32_t)gi;
         writes[wi].dstBinding = 31u + (uint32_t)gi;
         writes[wi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -717,8 +719,9 @@ void BezierPipeline::boltForwardSurface(float cosTheta) {
     // Convert cos-theta to mirror tilt angle and find gravity bin interpolation params
     // Gravity angle = angle between mirror normal and vertical direction
     // Must match kGravityAngles[] in bolt_common.slang
-    const int numGravityAngles = 10;
-    const float gravityAnglesDeg[10] = {0.0f, 12.0f, 22.0f, 30.0f, 35.0f, 45.0f, 52.0f, 60.0f, 67.0f, 75.0f};
+    const int numGravityAngles = 20;
+    const float gravityAnglesDeg[20] = {10.0f, 14.0f, 18.0f, 22.0f, 26.0f, 30.0f, 34.0f, 38.0f, 42.0f, 46.0f,
+                                        50.0f, 54.0f, 58.0f, 62.0f, 66.0f, 70.0f, 73.0f, 76.0f, 78.0f, 80.0f};
     float angleDeg = std::acos(std::max(0.0f, std::min(1.0f, cosTheta))) * 180.0f / 3.14159265f;
 
     uint32_t lo = 0, hi = 0;
@@ -1032,13 +1035,16 @@ void BezierPipeline::computeWoSInfluence(const std::string &outputDir) {
     }
 
     // Bolt positions buffer
-    float margin = 0.08f;
-    std::vector<float> boltPos(35 * 2);
-    for (int j = 0; j < 5; j++) {
-        float v = margin + (1.f - 2.f*margin) * j / 4.f;
-        for (int i = 0; i < 7; i++) {
-            float u = margin + (1.f - 2.f*margin) * i / 6.f;
-            int idx = j * 7 + i;
+    float margin = m_cfg.boltMargin;
+    uint32_t nbolts_x = m_cfg.numBoltsX;
+    uint32_t nbolts_z = m_cfg.numBoltsZ;
+    uint32_t nb = m_cfg.numBolts;
+    std::vector<float> boltPos(nb * 2);
+    for (uint32_t j = 0; j < nbolts_z; j++) {
+        float v = margin + (1.f - 2.f*margin) * j / float(nbolts_z - 1);
+        for (uint32_t i = 0; i < nbolts_x; i++) {
+            float u = margin + (1.f - 2.f*margin) * i / float(nbolts_x - 1);
+            uint32_t idx = j * nbolts_x + i;
             boltPos[idx*2]   = (u - 0.5f) * m_cfg.heliostatWidth;
             boltPos[idx*2+1] = (v - 0.5f) * m_cfg.heliostatLength;
         }

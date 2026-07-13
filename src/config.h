@@ -67,6 +67,7 @@ struct Config {
     uint32_t numBolts = 35;
     uint32_t numBoltsX = 7;
     uint32_t numBoltsZ = 5;
+    float boltMargin = 0.08f;              // edge margin fraction (0..0.5)
     bool enableMSELoss = false;          // MSE loss: match ideal elliptical flux pixel-by-pixel
     bool disableGravity = false;       // if true, zero out gravity in proxy model
     std::string influenceDataPath = "data";
