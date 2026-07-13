@@ -1,0 +1,20 @@
+{
+  "29.5": {
+    "rms_mm": 1.136,
+    "r2": 0.9822,
+    "shape_corr": 0.9911,
+    "slope_corr": 0.8833,
+    "pv_proxy_mm": 38.5,
+    "pv_fea_mm": 35.39,
+    "pv_ratio": 1.088
+  },
+  "58.5": {
+    "rms_mm": 1.16,
+    "r2": 0.9807,
+    "shape_corr": 0.9904,
+    "slope_corr": 0.8441,
+    "pv_proxy_mm": 38.4,
+    "pv_fea_mm": 33.35,
+    "pv_ratio": 1.1513
+  }
+}

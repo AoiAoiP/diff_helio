@@ -1,0 +1,61 @@
+=== Bezier Heliostat Surface Optimizer ===
+Receiver: 157x50, radius=10.0m
+Heliostat: 12.84x9.45m, grid=32
+Optimizer: 300 iters, lr=2.0e-04
+Loaded: 36 train, 36 val, 1 configs (filtered from 1)
+Selected GPU: NVIDIA GeForce RTX 4070 SUPER (discrete)
+
+[1/1] North
+  Sobol pool: 402653184 floats (2^26), seed=12345
+  [diag] binding 31: buf=0x2d134758650, size=24, writes_cnt=19
+  Loaded gravity_0deg.bin (PV=16.795 mm)
+  Loaded gravity_12deg.bin (PV=16.203 mm)
+  Loaded gravity_22deg.bin (PV=14.711 mm)
+  Loaded gravity_30deg.bin (PV=13.018 mm)
+  Loaded gravity_35deg.bin (PV=11.784 mm)
+  Loaded gravity_45deg.bin (PV=8.592 mm)
+  Loaded gravity_52deg.bin (PV=6.608 mm)
+  Loaded gravity_60deg.bin (PV=4.175 mm)
+  Loaded gravity_67deg.bin (PV=2.434 mm)
+  Loaded gravity_75deg.bin (PV=0.963 mm)
+Optimizing (BOLT mode, 35 bolts): North (dist=300.0m)
+  [gravity] cosθ=0.5315 → angle=57.89° → lo=6 hi=7 t=0.7367
+  init flux: nzPix=3850 maxF=634.23 sumF=416287.16
+ S95=227.4353 m^2
+  Iter   0: Loss=52272.437500, S95=227.4264 m^2, time=5.8s
+  Iter   1: Loss=50349.800781, S95=218.7776 m^2, time=6.8s
+  Iter   2: Loss=48495.988281, S95=210.6712 m^2, time=6.6s
+  Iter  10: Loss=38332.500000, S95=165.5728 m^2, time=6.1s
+  Iter  20: Loss=32204.304688, S95=138.6392 m^2, time=6.2s
+  Iter  30: Loss=28161.751953, S95=120.5589 m^2, time=6.5s
+  Iter  40: Loss=25034.253906, S95=106.8053 m^2, time=6.3s
+  Iter  50: Loss=22320.736328, S95=94.7903 m^2, time=4.6s
+  Iter  60: Loss=20228.359375, S95=85.3900 m^2, time=4.7s
+  Iter  70: Loss=18761.511719, S95=79.0712 m^2, time=6.6s
+  Iter  80: Loss=17673.115234, S95=74.2510 m^2, time=6.2s
+  Iter  90: Loss=16812.916016, S95=70.4491 m^2, time=6.2s
+  Iter 100: Loss=16018.547852, S95=66.8205 m^2, time=6.1s
+  Iter 110: Loss=15284.621094, S95=63.6145 m^2, time=6.1s
+  Iter 120: Loss=14664.978516, S95=61.0665 m^2, time=4.7s
+  Iter 130: Loss=14152.006836, S95=58.9721 m^2, time=4.8s
+  Iter 140: Loss=13762.520508, S95=57.2824 m^2, time=4.6s
+  Iter 150: Loss=13516.095703, S95=56.0017 m^2, time=4.6s
+  Iter 160: Loss=13326.390625, S95=55.0635 m^2, time=4.7s
+  Iter 170: Loss=13168.184570, S95=54.3609 m^2, time=4.6s
+  Iter 180: Loss=13030.515625, S95=53.8051 m^2, time=4.7s
+  Iter 190: Loss=12927.068359, S95=53.3915 m^2, time=4.5s
+  Iter 200: Loss=12862.091797, S95=53.0802 m^2, time=4.5s
+  Iter 210: Loss=12806.906250, S95=52.8624 m^2, time=4.5s
+  Iter 220: Loss=12768.166992, S95=52.7067 m^2, time=4.5s
+  Iter 230: Loss=12743.537109, S95=52.5956 m^2, time=6.5s
+  Iter 240: Loss=12709.994141, S95=52.5066 m^2, time=6.3s
+  Iter 250: Loss=12680.720703, S95=52.4221 m^2, time=5.6s
+  Iter 260: Loss=12665.510742, S95=52.3866 m^2, time=4.6s
+  Iter 270: Loss=12653.463867, S95=52.3288 m^2, time=4.5s
+  Iter 280: Loss=12647.931641, S95=52.3110 m^2, time=4.5s
+  Iter 290: Loss=12645.981445, S95=52.2976 m^2, time=6.1s
+  Done. Best S95: 52.2976 (init: 227.4353, reduction: 77.0%)
+  Time: total=1315.5s
+  Bolt stroke: min=0.000mm  max=32.900mm  (zero-based)
+
+=== Done in 1324 sec. Results: results_vsm_mnvn_300iter ===

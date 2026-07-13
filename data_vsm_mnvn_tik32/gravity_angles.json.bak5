@@ -1,0 +1,47 @@
+{
+  "angles": {
+    "0": {
+      "cos_theta": 1.0,
+      "pv_mm": 16.758903,
+      "min_mm": -16.758903,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "train_data/zero_heights/node_dump_0deg.csv"
+    },
+    "30": {
+      "cos_theta": 0.8660254037844387,
+      "pv_mm": 12.98977,
+      "min_mm": -12.98977,
+      "max_mm": 0.0,
+      "nan_filled": 50,
+      "source": "train_data/zero_heights/node_dump_30deg.csv"
+    },
+    "45": {
+      "cos_theta": 0.7071067811865476,
+      "pv_mm": 8.554378620343424,
+      "min_mm": -8.554378620343424,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "train_data/zero_heights/node_dump_45deg.csv"
+    },
+    "60": {
+      "cos_theta": 0.5000000000000001,
+      "pv_mm": 4.210726,
+      "min_mm": -4.186185999999999,
+      "max_mm": 0.02454000000000044,
+      "nan_filled": 0,
+      "source": "train_data/zero_heights/node_dump_60deg.csv"
+    },
+    "75": {
+      "cos_theta": 0.25881904510252074,
+      "pv_mm": 0.9626820000725343,
+      "min_mm": -0.9626820000725343,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "train_data/zero_heights/node_dump_75deg.csv"
+    }
+  },
+  "grid_size": 32,
+  "plate_W_m": 12.84,
+  "plate_L_m": 9.45
+}

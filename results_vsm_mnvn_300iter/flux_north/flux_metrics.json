@@ -1,0 +1,24 @@
+{
+  "29.5": {
+    "peak_proxy": 766.1,
+    "peak_fea": 755.1,
+    "total_proxy": 426153.0,
+    "total_fea": 424413.0,
+    "s95_px_proxy": 1421,
+    "s95_px_fea": 1564,
+    "s95_m2_proxy": 227.48,
+    "s95_m2_fea": 250.37,
+    "flux_corr": 0.9989
+  },
+  "58.5": {
+    "peak_proxy": 734.6,
+    "peak_fea": 770.4,
+    "total_proxy": 487568.0,
+    "total_fea": 486730.0,
+    "s95_px_proxy": 1400,
+    "s95_px_fea": 1581,
+    "s95_m2_proxy": 224.11,
+    "s95_m2_fea": 253.09,
+    "flux_corr": 0.998
+  }
+}

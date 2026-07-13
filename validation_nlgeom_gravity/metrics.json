@@ -1,0 +1,47 @@
+{
+  "partA_pure_gravity": {
+    "0": {
+      "pv_on": 16.795455193548385,
+      "pv_off": 24.41269644531875,
+      "reduce_pct": 31.201966029569864,
+      "rms_on_off_mm": 0.9238263478177351,
+      "maxabs_diff_mm": 8.991311170923098
+    },
+    "30": {
+      "pv_on": 13.017967786354777,
+      "pv_off": 18.347815804507643,
+      "reduce_pct": 29.048950975643884,
+      "rms_on_off_mm": 0.6055056767543043,
+      "maxabs_diff_mm": 5.329848018152866
+    },
+    "45": {
+      "pv_on": 8.592491761677373,
+      "pv_off": 9.485371483537412,
+      "reduce_pct": 9.413228816706866,
+      "rms_on_off_mm": 0.12901806447744454,
+      "maxabs_diff_mm": 0.892879721860038
+    },
+    "60": {
+      "pv_on": 4.174707707093333,
+      "pv_off": 4.345803039479681,
+      "reduce_pct": 3.9370245460280473,
+      "rms_on_off_mm": 0.031603261635247154,
+      "maxabs_diff_mm": 0.4289338560464666
+    },
+    "75": {
+      "pv_on": 0.962922645231485,
+      "pv_off": 0.9751725595708302,
+      "reduce_pct": 1.2561791468718453,
+      "rms_on_off_mm": 0.0011705660170106724,
+      "maxabs_diff_mm": 0.03754461261840171
+    }
+  },
+  "partB_proxy_choice_0deg": {
+    "proxy_OFF vs FEA-OFF (superposition check)": 1.444196869715665,
+    "proxy_ON  vs FEA-ON  (reality, ON gravity)": 1.7337703471724142,
+    "proxy_OFF vs FEA-ON  (reality, OFF gravity)": 1.889431528652563,
+    "proxy_ON  vs FEA-OFF": 1.8781718716863518,
+    "FEA-ON    vs FEA-OFF (bolted NLGEOM effect)": 1.2865240929513722
+  },
+  "verdict": "USE ON  gravity"
+}
