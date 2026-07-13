@@ -16,9 +16,23 @@ __pycache__/
 *.swp
 *.swo
 
-# Claude local settings
-.claude/
-
 # OS files
 Thumbs.db
 .DS_Store
+
+# Claude / AI assistant
+.claude/
+CLAUDE.md
+
+# Third-party libraries (fetched by CMake FetchContent)
+third_party/
+
+# Experimental results
+results_*/
+validation_*/
+
+# FEA training data (raw input for gravity bin generation)
+train_data/
+
+# Design documents
+docs/
