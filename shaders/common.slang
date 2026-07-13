@@ -236,3 +236,8 @@ public void getReceiverSampleData(uint2 pixelCoord, out float3 pos, out float3 n
     pos = s.position;
     nrm = s.normal;
 }
+
+// Phase 2: Batched sun dispatch (flat float array, 8 floats per sun entry)
+public static const uint kSunStride = 8u;
+public static const uint kMaxSunBatch = 6u;
+[[vk::binding(51)]] public uniform StructuredBuffer<float> sunBatchFlat;

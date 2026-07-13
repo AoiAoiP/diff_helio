@@ -220,8 +220,8 @@ void BezierPipeline::createBuffersAndTextures() {
 
     m_controlY = m_app.createBuffer(16 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     uint32_t gridPts = m_cfg.gridSize * m_cfg.gridSize;
-    m_yGrid    = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-    m_nGrid    = m_app.createBuffer(gridPts * 4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    m_yGrid    = m_app.createBuffer(kSunBatchSize * gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    m_nGrid    = m_app.createBuffer(kSunBatchSize * gridPts * 4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
     // P1: Generate Sobol-based Gaussian perturbation pool
     // 6-dimensional Sobol sequence with Owen scrambling + inverse_erf
@@ -322,7 +322,7 @@ void BezierPipeline::createBuffersAndTextures() {
     // Must match kTileCount in forward.slang — hardcoding 3 dropped tile-3 energy
     // and corrupted neighbor pixels at 32x32.
     uint32_t fluxTileCount = (m_totalSpp + 255u) / 256u;
-    m_fluxPartial = m_app.createBuffer(m_totalPixels * fluxTileCount * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+    m_fluxPartial = m_app.createBuffer(kSunBatchSize * m_totalPixels * fluxTileCount * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
     // Partial gradient accumulation buffer (per-group × 16 floats)
     m_gradPartial = m_app.createBuffer(m_totalBackwardGroups * 16 * sizeof(float),
@@ -435,6 +435,7 @@ void BezierPipeline::createBoltPipelines() {
     // Storage images 8, 12
     bindings.push_back({8, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     bindings.push_back(sb(9));  // gaussianPool
+    bindings.push_back(sb(51)); // Phase 2: sunBatchFlat
     bindings.push_back(sb(10)); // fluxPartial
     bindings.push_back(sb(11)); // gradPartial (bolt-sized)
     bindings.push_back({12, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
@@ -531,8 +532,8 @@ void BezierPipeline::createBoltBuffers() {
     m_boltHeightGradient = m_app.createBuffer(n * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     m_boltAdamM = m_app.createBuffer(n * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     m_boltAdamV = m_app.createBuffer(n * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-    m_yuGrid = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-    m_yvGrid = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    m_yuGrid = m_app.createBuffer(kSunBatchSize * gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    m_yvGrid = m_app.createBuffer(kSunBatchSize * gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
     m_surfaceGradient = m_app.createBuffer(gridPts * 3u * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     m_gravityY = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
@@ -592,6 +593,8 @@ void BezierPipeline::createBoltBuffers() {
     m_dummyBuf = m_app.createBuffer(64, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     std::vector<float> dummyData(16, 0.0f);
     m_app.uploadBuffer(m_dummyBuf, dummyData.data(), 64);
+    m_sunBatchFlat = m_app.createBuffer(kSunBatchSize * 8 * sizeof(float),
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
     // Bind all descriptors
     VkDescriptorSet set = m_boltDescriptorSet;
@@ -646,6 +649,7 @@ void BezierPipeline::createBoltBuffers() {
         {m_gravityBins[17].buffer, 0, m_gravityBins[17].size}, // 48: gravityBin76
         {m_gravityBins[18].buffer, 0, m_gravityBins[18].size}, // 49: gravityBin78
         {m_gravityBins[19].buffer, 0, m_gravityBins[19].size}, // 50: gravityBin80
+        {m_sunBatchFlat.buffer, 0, m_sunBatchFlat.size},       // 51: sunBatchFlat (Phase 2)
     };
 
     VkDescriptorImageInfo imgInfos[] = {
@@ -653,8 +657,8 @@ void BezierPipeline::createBoltBuffers() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(48);
-    for (int i = 0; i < 48; i++) {
+    std::vector<VkWriteDescriptorSet> writes(49);
+    for (int i = 0; i < 49; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -700,6 +704,10 @@ void BezierPipeline::createBoltBuffers() {
         writes[wi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[wi].pBufferInfo = &sbInfos[21 + gi];
     }
+    // Binding 51: sunBatchFlat (Phase 2)
+    writes[48].dstBinding = 51;
+    writes[48].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[48].pBufferInfo = &sbInfos[41];
 
     vkUpdateDescriptorSets(m_app.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -715,48 +723,58 @@ void BezierPipeline::uploadBoltData(const std::vector<float> &initBoltHeights) {
     m_app.uploadBuffer(m_boltAdamV, zeros.data(), n * sizeof(float));
 }
 
-void BezierPipeline::boltForwardSurface(float cosTheta) {
-    // Convert cos-theta to mirror tilt angle and find gravity bin interpolation params
-    // Gravity angle = angle between mirror normal and vertical direction
-    // Must match kGravityAngles[] in bolt_common.slang
+static float computeCosThetaStatic(const std::array<float,3>& sd, const std::array<float,3>& hp,
+                                    const std::array<float,3>& ap);
+
+// Phase 2: helper to pack 1 sun into sunBatchFlat + dispatch
+static void packGravityParams(float cosTheta, uint32_t& lo, uint32_t& hi, float& gt) {
     const int numGravityAngles = 20;
     const float gravityAnglesDeg[20] = {10.0f, 14.0f, 18.0f, 22.0f, 26.0f, 30.0f, 34.0f, 38.0f, 42.0f, 46.0f,
                                         50.0f, 54.0f, 58.0f, 62.0f, 66.0f, 70.0f, 73.0f, 76.0f, 78.0f, 80.0f};
-    float angleDeg = std::acos(std::max(0.0f, std::min(1.0f, cosTheta))) * 180.0f / 3.14159265f;
+    float angDeg = std::acos(std::max(0.0f,std::min(1.0f,cosTheta)))*180.0f/3.14159265f;
+    if(angDeg<=gravityAnglesDeg[0]){lo=0;hi=0;gt=0.0f;}
+    else if(angDeg>=gravityAnglesDeg[numGravityAngles-1]){lo=numGravityAngles-1;hi=lo;gt=0.0f;}
+    else for(int j=0;j<numGravityAngles-1;j++) if(angDeg>=gravityAnglesDeg[j]&&angDeg<=gravityAnglesDeg[j+1])
+        {lo=(uint32_t)j;hi=(uint32_t)(j+1);gt=(angDeg-gravityAnglesDeg[j])/(gravityAnglesDeg[j+1]-gravityAnglesDeg[j]);break;}
+}
 
-    uint32_t lo = 0, hi = 0;
-    float t = 0.0f;
-    if (angleDeg <= gravityAnglesDeg[0]) {
-        lo = 0; hi = 0; t = 0.0f;
-    } else if (angleDeg >= gravityAnglesDeg[numGravityAngles - 1]) {
-        lo = numGravityAngles - 1; hi = numGravityAngles - 1; t = 0.0f;
-    } else {
-        for (int i = 0; i < numGravityAngles - 1; i++) {
-            if (angleDeg >= gravityAnglesDeg[i] && angleDeg <= gravityAnglesDeg[i + 1]) {
-                lo = i; hi = i + 1;
-                t = (angleDeg - gravityAnglesDeg[i]) / (gravityAnglesDeg[i + 1] - gravityAnglesDeg[i]);
-                break;
-            }
-        }
+void BezierPipeline::boltForwardSurface(const std::vector<std::array<float,3>>& trainDirs,
+    const std::array<float,3>& hp, const std::array<float,3>& ap, int batchStart, uint32_t batchCount) {
+    // Pack sun batch data: 8 floats/sun (dir[3],pad,gravLo,gravHi,gravT,pad)
+    std::vector<float> batch(batchCount*8, 0.0f);
+    for(uint32_t i=0;i<batchCount;i++){
+        const auto& sd=trainDirs[batchStart+i];
+        batch[i*8+0]=sd[0];batch[i*8+1]=sd[1];batch[i*8+2]=sd[2];
+        uint32_t lo,hi;float gt;
+        packGravityParams(computeCosThetaStatic(sd,hp,ap),lo,hi,gt);
+        std::memcpy(&batch[i*8+4],&lo,4);std::memcpy(&batch[i*8+5],&hi,4);batch[i*8+6]=gt;
+        if(i==0){static bool fc=true;if(fc){float ca=computeCosThetaStatic(sd,hp,ap);fmt::print("  [gravity] cos={:.4f} ang={:.2f} lo={} hi={} t={:.4f}\n",ca,std::acos(std::max(0.0f,std::min(1.0f,ca)))*180.0f/3.14159265f,lo,hi,gt);fc=false;}}
     }
-
-    static bool firstCall = true;
-    if (firstCall) {
-        fmt::print("  [gravity] cosθ={:.4f} → angle={:.2f}° → lo={} hi={} t={:.4f}\n", cosTheta, angleDeg, lo, hi, t);
-        firstCall = false;
-    }
-
-    auto pass = m_app.beginComputePass();
+    m_app.uploadBuffer(m_sunBatchFlat, batch.data(), batch.size()*sizeof(float));
+    auto pass=m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeBoltSurface);
-    struct { uint32_t numBolts; uint32_t gravityLo; uint32_t gravityHi; float gravityT; uint32_t disableGravity; } pc;
-    pc.numBolts = m_cfg.numBolts;
-    pc.gravityLo = lo;
-    pc.gravityHi = hi;
-    pc.gravityT = t;
-    pc.disableGravity = m_cfg.disableGravity ? 1u : 0u;
+    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t _pad;}pc;
+    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=batchCount;pc._pad=0;
+    m_app.pushConstants(pass.cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
+    m_app.dispatch(pass.cmd, 1, 1, batchCount);
+    m_app.pipelineBarrier(pass.cmd);
+    m_app.endComputePass(pass);
+}
+
+void BezierPipeline::boltForwardSurface(float cosTheta) {
+    uint32_t lo,hi;float gt;
+    packGravityParams(cosTheta,lo,hi,gt);
+    std::vector<float> batch(8,0.0f);
+    batch[0]=m_lastSunDir[0];batch[1]=m_lastSunDir[1];batch[2]=m_lastSunDir[2];
+    std::memcpy(&batch[4],&lo,4);std::memcpy(&batch[5],&hi,4);batch[6]=gt;
+    m_app.uploadBuffer(m_sunBatchFlat, batch.data(), 8*sizeof(float));
+    auto pass=m_app.beginComputePass();
+    m_app.bindPipeline(pass.cmd, m_pipeBoltSurface);
+    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t _pad;}pc;
+    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=1;pc._pad=0;
     m_app.pushConstants(pass.cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
     m_app.dispatch(pass.cmd, 1, 1, 1);
-    m_app.pipelineBarrier(pass.cmd); // surface → forward reads
+    m_app.pipelineBarrier(pass.cmd);
     m_app.endComputePass(pass);
 }
 
@@ -1175,6 +1193,7 @@ void BezierPipeline::computeWoSInfluence(const std::string &outputDir) {
 
 void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::array<float, 3> &hp,
                                      const std::array<float, 3> &ap) {
+    m_lastSunDir = sd; // Phase 2: cache for convenience overload
     // ---- Binding 0: ReceiverParams (10 floats, 40 bytes) ----
     std::vector<float> recv(10, 0.0f);
     recv[0]=m_cfg.receiverPosition[0]; recv[1]=m_cfg.receiverPosition[1]; recv[2]=m_cfg.receiverPosition[2];
@@ -1558,10 +1577,10 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             std::vector<float> zeros(n, 0.0f);
             m_app.uploadBuffer(m_boltHeightGradient, zeros.data(), n * sizeof(float));
 
-            for (const auto &sd : trainDirs) {
+            for (size_t si = 0; si < trainDirs.size(); si++) {
+                const auto &sd = trainDirs[si];
                 updateUniforms(sd, hc.position, aimPoint);
-                float cosTheta = computeCosTheta(sd, hc.position, aimPoint);
-                boltForwardSurface(cosTheta);
+                boltForwardSurface(trainDirs, hc.position, aimPoint, (int)si, 1);
                 clearRayValidity();  // P2: clear before each sun direction
                 forwardRender(false);
 

@@ -33,6 +33,6 @@
   "bolt_margin": 0.08,
   "use_bspline": 0,
   "influence_data_path": "data_ansys_20bin",
-  "output_dir": "results_20bin_200iter",
+  "output_dir": "results_phase2_300iter",
   "samplePoolPow": 26
 }

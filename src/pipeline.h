@@ -53,6 +53,8 @@ public:
                         const std::array<float, 3> &aimPoint);
     void forwardRender(bool withBezier = true);
     void boltForwardSurface(float gravityScale);
+    void boltForwardSurface(const std::vector<std::array<float,3>>& trainDirs,
+        const std::array<float,3>& hp, const std::array<float,3>& ap, int batchStart, uint32_t batchCount);
     void uploadSurfaceFromFile(const std::string &path);  // bypass bolt, upload UY from file
     std::vector<float> readFlux();
     std::array<uint32_t, 6> getDiagCounts() const;  // read all diagnostic counters
@@ -149,6 +151,9 @@ private:
     GpuBuffer m_tirCountBuf;  // TIR fallback statistics (1 uint32)
     GpuBuffer m_boltGradPartial;
     GpuBuffer m_dummyBuf; // small dummy buffer for unused bindings
+    GpuBuffer m_sunBatchFlat; // Phase 2: sun batch data (binding 41)
+    std::array<float,3> m_lastSunDir = {0,1,0};
+    static constexpr uint32_t kSunBatchSize = 6;
 
     // Descriptor layouts (one shared Bezier layout, one shared bolt layout)
     VkDescriptorSetLayout m_boltSetLayout = VK_NULL_HANDLE;
