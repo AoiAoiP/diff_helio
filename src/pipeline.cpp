@@ -331,8 +331,8 @@ void BezierPipeline::createBuffersAndTextures() {
     // ---- Uniform buffers (tight packing, matching spirv-cross verified layout) ----
     // Binding 0: ReceiverParams (40 bytes = 10 floats)
     m_uboReceiver = m_app.createBuffer(10 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
-    // Binding 1: HeliostatParams (36 bytes = 9 floats; was 24 = 6 floats)
-    m_uboHeliostat = m_app.createBuffer(9 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+    // Binding 1: HeliostatParams (44 bytes = 11 floats; P4: +2 for culling dir)
+    m_uboHeliostat = m_app.createBuffer(11 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
     // Binding 2: SunParams (52 bytes = 13 floats; was 36 = 9 floats)
     m_uboSun = m_app.createBuffer(13 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
     // Binding 3: heliostatPosition float3 (12 bytes)
@@ -1187,7 +1187,7 @@ void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::a
 
     // ---- Binding 1: HeliostatParams (9 floats, 36 bytes) ----
     // Layout: size(2), depth(1), refIdx(1), slopeErr(1), refArea(1), reflectivity(1), reflOnly(1), pad(1)
-    std::vector<float> helio(9, 0.0f);
+    std::vector<float> helio(11, 0.0f);
     helio[0]=m_cfg.heliostatWidth; helio[1]=m_cfg.heliostatLength;
     helio[2]=m_cfg.glassDepth;
     helio[3]=m_cfg.refractiveIndex;
@@ -1196,7 +1196,13 @@ void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::a
     helio[6]=m_cfg.reflectivity;
     helio[7]=0.0f; // always refraction (was reflectionOnly)
     std::memcpy(&helio[8], &m_samplePoolMask, sizeof(uint32_t)); // poolMask (P3)
-    m_app.uploadBuffer(m_uboHeliostat, helio.data(), 9 * sizeof(float));
+    // P4: cylinder half-face culling direction (from receiver center to heliostat)
+    float hdx = hp[0] - m_cfg.receiverPosition[0];
+    float hdz = hp[2] - m_cfg.receiverPosition[2];
+    float hdLen = std::sqrt(hdx*hdx + hdz*hdz);
+    helio[9] = (hdLen > 1e-6f) ? hdx / hdLen : 0.0f;
+    helio[10] = (hdLen > 1e-6f) ? hdz / hdLen : 0.0f;
+    m_app.uploadBuffer(m_uboHeliostat, helio.data(), 11 * sizeof(float));
 
     // ---- Binding 2: SunParams (13 floats, 52 bytes) ----
     // Layout: dir(3), dni(1), shapeParams(4), shapeIntegral(1), type(1), _pad(3)

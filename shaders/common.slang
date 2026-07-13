@@ -29,8 +29,10 @@ public struct HeliostatParams {
     float slopeError;
     float reflectiveArea;
     float reflectivity;
-    float _pad0;            // was reflectionOnly (removed, always refraction)
-    float poolMask;         // P3: bit_cast<uint> pool mask for Sobol indexing
+    float _pad0;            // was reflectionOnly
+    float poolMask;         // P3: pool mask for Sobol indexing
+    float cullDirX;         // P4: dir to heliostat X (cylinder half-cull)
+    float cullDirZ;         // P4: dir to heliostat Z
 };
 
 public struct SunParams {
@@ -212,6 +214,7 @@ public float getReceiverRadius()            { return receiver.radius; }
 public float3 getReceiverPosition()         { return receiver.position; }
 public float getReceiverHeight()            { return receiver.height; }
 public float2 getHeliostatSize()            { return heliostat.size; }
+public float2 getHeliostatCullDir()          { return float2(heliostat.cullDirX, heliostat.cullDirZ); }
 public float getHeliostatDepth()            { return heliostat.depth; }
 public float getHeliostatRefractiveIndex()   { return heliostat.refractiveIndex; }
 public float getHeliostatReflectiveArea()    { return heliostat.reflectiveArea; }

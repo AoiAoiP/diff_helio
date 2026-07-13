@@ -95,6 +95,10 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
     float3 origin, normP;
     getReceiverSampleData(pc, origin, normP);
 
+    // P4: cylinder half-face culling — skip pixels facing away from heliostat
+    float2 cullDir = getHeliostatCullDir();
+    if (normP.x * cullDir.x + normP.z * cullDir.y <= 0.0f) return;
+
     // Macro normal for coordinate frame (bisector of sun & aim)
     float3 macroN   = computeHeliostatNormal(getSunDirection(), heliostatPosition, aimPoint);
     OrthonormalBasis macroBasis = computeBasis(macroN);
