@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-07-14T11:20:00",
+  "gpu": {
+    "model": "NVIDIA GeForce RTX 4070 SUPER",
+    "vram_total_mb": 12282,
+    "vram_idle_mb": 1112,
+    "vram_peak_mb": 2657,
+    "vram_steady_state_mb": 2605,
+    "vram_optimization_overhead_mb": 1493,
+    "vram_mean_mb": 2608.7,
+    "vram_std_mb": 9.2,
+    "gpu_utilization_pct": "97-100"
+  },
+  "optimization": {
+    "config": "bolt_vsm_mnvn_300iter.json",
+    "heliostat": "North 300m",
+    "grid_size": 32,
+    "num_bolts": 35,
+    "bolt_layout": "7x5",
+    "num_sun_directions": 36,
+    "iterations": 300,
+    "sobol_pool_floats": 402653184,
+    "sobol_pool_mb": 1536.0,
+    "sparse_culling_active_pct": 49.0,
+    "total_pixels": 7850,
+    "active_pixels": 3850
+  },
+  "timing": {
+    "total_elapsed_s": 2288,
+    "optimization_loop_s": 2278.8,
+    "overhead_s": 9.2,
+    "per_iter_mean_s": 7.596,
+    "per_iter_median_s": 8.3,
+    "per_iter_min_s": 7.0,
+    "per_iter_max_s": 11.1,
+    "per_iter_std_s": 0.7,
+    "per_iter_p10_s": 7.6,
+    "per_iter_p90_s": 8.9,
+    "estimated_rays_per_iter_billion": 0.58,
+    "estimated_rays_per_second_million": 76.0
+  },
+  "results": {
+    "initial_s95_m2": 227.1774,
+    "best_s95_m2": 53.1692,
+    "reduction_pct": 76.6,
+    "bolt_stroke_min_mm": 0.0,
+    "bolt_stroke_max_mm": 35.409
+  },
+  "warnings": [
+    "10-bin gravity data used with 20-bin code path: angles 10/14/18/26/34/38/42/46 deg missing (zero-filled)",
+    "Sobol pool (1.5 GB) still allocated despite Wang hash inline RNG being implemented"
+  ]
+}
