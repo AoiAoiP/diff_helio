@@ -266,3 +266,8 @@ public void getReceiverSampleData(uint2 pixelCoord, out float3 pos, out float3 n
 public static const uint kSunStride = 8u;
 public static const uint kMaxSunBatch = 6u;
 [[vk::binding(51)]] public uniform StructuredBuffer<float> sunBatchFlat;
+
+// A1: Sparse pixel culling — compacted list of receiver pixel indices facing
+// the heliostat (sun-independent). Built on CPU (buildActivePixelList), tail
+// padded with 0xFFFFFFFF sentinels (>= totalPixels → shader early-out).
+[[vk::binding(55)]] public uniform StructuredBuffer<uint> activePixelList;

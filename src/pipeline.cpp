@@ -131,6 +131,7 @@ void BezierPipeline::createPipelines() {
     allBindings.push_back(sb(16));  // controlYGradientOut
     allBindings.push_back(sb(29));  // rayValidity (P2)
     allBindings.push_back(sb(31));  // tirCountBuf (TIR statistics)
+    allBindings.push_back(sb(55));  // activePixelList (A1: sparse culling)
 
     VkDescriptorSetLayout sharedLayout = VK_NULL_HANDLE;
     {
@@ -221,6 +222,19 @@ void BezierPipeline::createBuffersAndTextures() {
     m_rayValidity = m_app.createBuffer(((m_totalRays + 31u) / 32u) * sizeof(uint32_t),
                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
+    // A1: Active pixel list (sparse culling). Device-local — read once per
+    // workgroup in the hot render loops (host-visible here costs a PCIe round
+    // trip per workgroup). Defaults to identity mapping so every path that
+    // skips buildActivePixelList() keeps full-dispatch behavior.
+    m_activePixelList = m_app.createBuffer(m_totalPixels * sizeof(uint32_t),
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    {
+        std::vector<uint32_t> identity(m_totalPixels);
+        for (uint32_t i = 0; i < m_totalPixels; i++) identity[i] = i;
+        m_app.uploadBuffer(m_activePixelList, identity.data(), m_totalPixels * sizeof(uint32_t));
+    }
+    m_activePixelCount = m_totalPixels;
+
     // Multi-sun batch: renderedFlux & fluxGradient hold 36 sun-frames each.
     // Switched from RWTexture2D to RWStructuredBuffer to allow sunIndex linear indexing.
     m_renderedFlux = m_app.createTexture(m_cfg.pixelWidth, m_cfg.pixelHeight, VK_FORMAT_R32_SFLOAT,
@@ -281,6 +295,7 @@ void BezierPipeline::createBuffersAndTextures() {
         {m_controlYGradient.buffer, 0, m_controlYGradient.size}, // 16
         {m_rayValidity.buffer, 0, m_rayValidity.size},       // 29
         {m_tirCountBuf.buffer, 0, m_tirCountBuf.size},       // 31
+        {m_activePixelList.buffer, 0, m_activePixelList.size}, // 55 (A1: sparse culling)
     };
 
     VkDescriptorImageInfo imgInfos[] = {
@@ -288,8 +303,8 @@ void BezierPipeline::createBuffersAndTextures() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(19);
-    for (int i = 0; i < 19; i++) {
+    std::vector<VkWriteDescriptorSet> writes(20);
+    for (int i = 0; i < 20; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -314,6 +329,7 @@ void BezierPipeline::createBuffersAndTextures() {
     writes[16].dstBinding  = 16; writes[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[16].pBufferInfo = &sbufInfos[9];
     writes[17].dstBinding  = 29; writes[17].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[17].pBufferInfo = &sbufInfos[10];
     writes[18].dstBinding  = 31; writes[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[18].pBufferInfo = &sbufInfos[11];  // tirCountBuf
+    writes[19].dstBinding  = 55; writes[19].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[19].pBufferInfo = &sbufInfos[12];  // activePixelList (A1)
 
     fmt::print("  [diag] binding 31: buf=0x{:x}, size={}, writes_cnt={}\n",
                (uint64_t)m_tirCountBuf.buffer, m_tirCountBuf.size, writes.size());
@@ -375,6 +391,7 @@ void BezierPipeline::createBoltPipelines() {
     // Bindings 31-50: multi-angle FEA gravity bins (10/14/18/.../78/80 deg)
     for (uint32_t b = 31; b <= 50; b++)
         bindings.push_back(sb(b));
+    bindings.push_back(sb(55)); // activePixelList (A1: sparse culling)
 
     VkDescriptorSetLayoutCreateInfo linfo{};
     linfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -565,6 +582,7 @@ void BezierPipeline::createBoltBuffers() {
         {m_gravityBins[18].buffer, 0, m_gravityBins[18].size}, // 49: gravityBin78
         {m_gravityBins[19].buffer, 0, m_gravityBins[19].size}, // 50: gravityBin80
         {m_sunBatchFlat.buffer, 0, m_sunBatchFlat.size},       // 51: sunBatchFlat (Phase 2)
+        {m_activePixelList.buffer, 0, m_activePixelList.size}, // 55: activePixelList (A1)
     };
 
     VkDescriptorImageInfo imgInfos[] = {
@@ -572,8 +590,8 @@ void BezierPipeline::createBoltBuffers() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(49);
-    for (int i = 0; i < 49; i++) {
+    std::vector<VkWriteDescriptorSet> writes(50);
+    for (int i = 0; i < 50; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -623,6 +641,10 @@ void BezierPipeline::createBoltBuffers() {
     writes[48].dstBinding = 51;
     writes[48].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[48].pBufferInfo = &sbInfos[41];
+    // Binding 55: activePixelList (A1: sparse culling)
+    writes[49].dstBinding = 55;
+    writes[49].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[49].pBufferInfo = &sbInfos[42];
     vkUpdateDescriptorSets(m_app.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     m_boltBuffersCreated = true;
@@ -787,7 +809,7 @@ void BezierPipeline::boltBackwardPassCmd(VkCommandBuffer cmd) {
     struct { uint32_t numBolts; float _pad[3]; } bwPC;
     bwPC.numBolts = n; bwPC._pad[0] = 0; bwPC._pad[1] = 0; bwPC._pad[2] = 0;
     m_app.pushConstants(cmd, m_pipeBoltBackward.layout, &bwPC, sizeof(bwPC));
-    m_app.dispatch(cmd, m_totalPixels, tileCount, 1);
+    m_app.dispatch(cmd, m_activePixelCount, tileCount, 1);  // A1: sparse culling
     m_app.pipelineBarrier(cmd);
 
     // Stage 1b: reduce gradPartial → surfaceGradient
@@ -825,7 +847,7 @@ void BezierPipeline::forwardRenderCmd(VkCommandBuffer cmd) {
     // 2. Forward render
     m_app.bindPipeline(cmd, m_pipeForward);
     uint32_t tileCount = (m_totalSpp + 255) / 256;
-    m_app.dispatch(cmd, tileCount, m_totalPixels, 1);
+    m_app.dispatch(cmd, tileCount, m_activePixelCount, 1);  // A1: sparse culling
     m_app.pipelineBarrier(cmd);
     // 3. Finalize: atomic buffer → texture
     m_app.bindPipeline(cmd, m_pipeFinalize);
@@ -1148,6 +1170,19 @@ void BezierPipeline::computeWoSInfluence(const std::string &outputDir) {
     vkDestroyDescriptorSetLayout(m_app.device(), pipeWoS.setLayout, nullptr);
 }
 
+// A2: pack SunParams UBO contents (13 floats, layout matching binding 2)
+void BezierPipeline::fillSunParams(const std::array<float, 3> &sd, float *sunp) const {
+    // Layout: dir(3), dni(1), shapeParams(4), shapeIntegral(1), type(1), _pad(3)
+    sunp[0]=sd[0]; sunp[1]=sd[1]; sunp[2]=sd[2];
+    sunp[3]=m_cfg.dni;
+    // Buie shapeParams: {thetaInner, kappa, gamma, unused}
+    sunp[4]=m_cfg.buieThetaInner; sunp[5]=m_cfg.buieKappa;
+    sunp[6]=m_cfg.buieGamma; sunp[7]=0.0f;
+    sunp[8]=m_cfg.sunShapeIntegral;
+    sunp[9]=(float)(uint32_t)m_cfg.sunType;
+    sunp[10]=0.0f; sunp[11]=0.0f; sunp[12]=0.0f;
+}
+
 void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::array<float, 3> &hp,
                                      const std::array<float, 3> &ap) {
     m_lastSunDir = sd; // Phase 2: cache for convenience overload
@@ -1181,17 +1216,9 @@ void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::a
     m_app.uploadBuffer(m_uboHeliostat, helio.data(), 11 * sizeof(float));
 
     // ---- Binding 2: SunParams (13 floats, 52 bytes) ----
-    // Layout: dir(3), dni(1), shapeParams(4), shapeIntegral(1), type(1), _pad(3)
-    std::vector<float> sunp(13, 0.0f);
-    sunp[0]=sd[0]; sunp[1]=sd[1]; sunp[2]=sd[2];
-    sunp[3]=m_cfg.dni;
-    // Buie shapeParams: {thetaInner, kappa, gamma, unused}
-    sunp[4]=m_cfg.buieThetaInner; sunp[5]=m_cfg.buieKappa;
-    sunp[6]=m_cfg.buieGamma; sunp[7]=0.0f;
-    sunp[8]=m_cfg.sunShapeIntegral;
-    sunp[9]=(float)(uint32_t)m_cfg.sunType;
-    sunp[10]=0.0f; sunp[11]=0.0f; sunp[12]=0.0f;
-    m_app.uploadBuffer(m_uboSun, sunp.data(), 13 * sizeof(float));
+    float sunp[13];
+    fillSunParams(sd, sunp);
+    m_app.uploadBuffer(m_uboSun, sunp, 13 * sizeof(float));
 
     // ---- Binding 3: heliostatPosition (3 floats) ----
     m_app.uploadBuffer(m_uboHelioPos, hp.data(), 3 * sizeof(float));
@@ -1220,7 +1247,7 @@ void BezierPipeline::forwardRender(bool withBezier) {
     // 3. Forward render
     m_app.bindPipeline(pass.cmd, m_pipeForward);
     uint32_t tileCount = (m_totalSpp + 255) / 256;
-    m_app.dispatch(pass.cmd, tileCount, m_totalPixels, 1);
+    m_app.dispatch(pass.cmd, tileCount, m_activePixelCount, 1);  // A1: sparse culling
     m_app.pipelineBarrier(pass.cmd);
     // 4. Finalize: atomic buffer → texture
     m_app.bindPipeline(pass.cmd, m_pipeFinalize);
@@ -1240,6 +1267,37 @@ void BezierPipeline::clearRayValidity() {
     uint32_t numUints = (m_totalRays + 31u) / 32u;
     std::vector<uint32_t> zeros(numUints, 0u);
     m_app.uploadBuffer(m_rayValidity, zeros.data(), numUints * sizeof(uint32_t));
+}
+
+// A1: Precompute receiver pixels facing the heliostat (sun-independent).
+// Replicates the forward.slang half-face cull test (normP · cullDir > 0) with a
+// small over-inclusive margin, so the shader-side cull remains the source of
+// truth and results stay bit-identical to the full dispatch.
+void BezierPipeline::buildActivePixelList(const std::array<float, 3> &hp) {
+    uint32_t w = m_cfg.pixelWidth, h = m_cfg.pixelHeight;
+    float rx = m_cfg.receiverPosition[0], rz = m_cfg.receiverPosition[2];
+    float hdx = hp[0] - rx, hdz = hp[2] - rz;
+    float hdLen = std::sqrt(hdx * hdx + hdz * hdz);
+    float cullX = (hdLen > 1e-6f) ? hdx / hdLen : 0.0f;
+    float cullZ = (hdLen > 1e-6f) ? hdz / hdLen : 0.0f;
+
+    std::vector<uint32_t> list;
+    list.reserve(m_totalPixels);
+    for (uint32_t py = 0; py < h; py++)
+        for (uint32_t px = 0; px < w; px++) {
+            // Pixel normal on the cylinder: normP = (sin(ang), 0, -cos(ang))
+            float ang = float(px) * (2.0f * 3.14159265f / float(w));
+            float nx = std::sin(ang), nz = -std::cos(ang);
+            if (nx * cullX + nz * cullZ > -1e-4f)
+                list.push_back(py * w + px);
+        }
+    m_activePixelCount = std::max(1u, (uint32_t)list.size());
+    // Pad tail with sentinels (>= totalPixels → shader early-out) as defense
+    // against any dispatch that still covers the full pixel range.
+    list.resize(m_totalPixels, 0xFFFFFFFFu);
+    m_app.uploadBuffer(m_activePixelList, list.data(), m_totalPixels * sizeof(uint32_t));
+    fmt::print("  Sparse culling: {} active / {} total pixels ({:.0f}%)\n",
+               m_activePixelCount, m_totalPixels, 100.0f * m_activePixelCount / m_totalPixels);
 }
 
 // ---- CPU-side statistics ----
@@ -1460,6 +1518,9 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
 
         float pixelArea = (2.0f * 3.14159265f * m_cfg.receiverRadius * m_cfg.receiverHeight) / m_totalPixels;
 
+        // A1: sparse pixel culling — active set depends only on heliostat position
+        buildActivePixelList(hc.position);
+
         auto runValidation = [&]() {
             float totalS95 = 0.0f;
             for (const auto &sd : trainDirs) {
@@ -1536,22 +1597,25 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
 
             for (size_t si = 0; si < trainDirs.size(); si++) {
                 const auto &sd = trainDirs[si];
+                // Host-visible UBOs (sun/receiver/heliostat) are persistent-mapped:
+                // uploadBuffer is a bare memcpy with no sync — keep it on the CPU.
                 updateUniforms(sd, hc.position, aimPoint);
 
-                // Upload sun batch data (must happen before GPU pass)
+                // A2: sunBatchFlat is DEVICE-LOCAL — uploadBuffer would spin up a
+                // staging buffer + submit + vkQueueWaitIdle per sun. Update it
+                // inline in the command buffer instead (36 fewer submits/iter).
+                float batch[8] = {sd[0], sd[1], sd[2], 0, 0, 0, 0, 0};
                 {
                     float cosTheta = computeCosTheta(sd, hc.position, aimPoint);
                     uint32_t lo, hi; float gt;
                     packGravityParams(cosTheta, lo, hi, gt);
-                    std::vector<float> batch(8, 0.0f);
-                    batch[0] = sd[0]; batch[1] = sd[1]; batch[2] = sd[2];
                     std::memcpy(&batch[4], &lo, 4); std::memcpy(&batch[5], &hi, 4); batch[6] = gt;
-                    m_app.uploadBuffer(m_sunBatchFlat, batch.data(), 8 * sizeof(float));
                 }
 
-                // Phase 2 batch 1: boltForward + clearRayValidity + forwardRender
+                // Phase 2 batch 1: sunBatch update + boltForward + clearRayValidity + forwardRender
                 {
                     auto pass = m_app.beginComputePassRaw();
+                    m_app.updateBufferCmd(pass.cmd, m_sunBatchFlat, 0, 8 * sizeof(float), batch);  // A2
                     boltForwardSurfaceCmd(pass.cmd, 1);
                     clearRayValidityCmd(pass.cmd);
                     forwardRenderCmd(pass.cmd);
@@ -1680,6 +1744,9 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
     }
 
     float pixelArea = (2.0f * 3.14159265f * m_cfg.receiverRadius * m_cfg.receiverHeight) / m_totalPixels;
+
+    // A1: sparse pixel culling — active set depends only on heliostat position
+    buildActivePixelList(hc.position);
 
     auto runValidation = [&]() {
         float totalS95 = 0.0f;

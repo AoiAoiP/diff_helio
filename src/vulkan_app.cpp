@@ -632,6 +632,19 @@ void VulkanApp::fillBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, uint
                          0, 1, &barrier, 0, nullptr, 0, nullptr);
 }
 
+// A2: Update buffer from within an existing command buffer (data consumed at
+// record time; offset/size must be multiples of 4, size <= 65536).
+void VulkanApp::updateBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, VkDeviceSize offset,
+                                VkDeviceSize size, const void *data) {
+    vkCmdUpdateBuffer(cmd, buffer.buffer, offset, size, data);
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
 void VulkanApp::waitIdle() { vkQueueWaitIdle(m_computeQueue); }
 
 void VulkanApp::bindPipeline(VkCommandBuffer cmd, const ComputePipeline &pipeline) {

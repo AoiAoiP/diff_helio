@@ -96,6 +96,9 @@ public:
     RawComputePass beginComputePassRaw();
     void submitAndWait(RawComputePass &pass);
     void fillBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, uint32_t value);
+    // A2: Inline buffer update inside an existing command buffer (no upload submit)
+    void updateBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, VkDeviceSize offset,
+                         VkDeviceSize size, const void *data);
 
     void waitIdle();
 

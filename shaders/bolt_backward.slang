@@ -107,7 +107,8 @@ groupshared float gs_gridGrads[totalGridPoints][kSurfaceChannels];
 [shader("compute")]
 [numthreads(kBWGroupSize, 1, 1)]
 void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
-    uint lid = gtid.x, pixIdx = gid.x, spStart = gid.y * kBWGroupSize, spIdx = spStart + lid;
+    // A1: gid.x indexes the compacted active pixel list (sparse culling)
+    uint lid = gtid.x, pixIdx = activePixelList[gid.x], spStart = gid.y * kBWGroupSize, spIdx = spStart + lid;
     if (pixIdx >= totalPixels) return;
 
     // Zero all groupshared entries using strided access

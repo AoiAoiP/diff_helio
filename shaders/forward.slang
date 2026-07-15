@@ -87,7 +87,8 @@ void finalizeFlux(uint3 tid : SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(kFWGroupSize, 1, 1)]
 void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
-    uint lid = gtid.x, tileIdx = gid.x, pixelIdx = gid.y;
+    // A1: gid.y indexes the compacted active pixel list (sparse culling)
+    uint lid = gtid.x, tileIdx = gid.x, pixelIdx = activePixelList[gid.y];
     if (pixelIdx >= totalPixels) return;
 
     uint2 dims = getReceiverDims();

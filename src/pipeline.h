@@ -51,6 +51,8 @@ public:
     void uploadBoltData(const std::vector<float> &initBoltHeights);
     void updateUniforms(const std::array<float, 3> &sunDir, const std::array<float, 3> &helioPos,
                         const std::array<float, 3> &aimPoint);
+    // A2: pack SunParams UBO contents (13 floats) for inline cmd-buffer updates
+    void fillSunParams(const std::array<float, 3> &sunDir, float *sunp) const;
     void forwardRender(bool withBezier = true);
     void boltForwardSurface(float gravityScale);
     void boltForwardSurface(const std::vector<std::array<float,3>>& trainDirs,
@@ -78,6 +80,9 @@ private:
 
     // Sampling
     void clearRayValidity();
+
+    // A1: Sparse pixel culling — precompute receiver pixels facing the heliostat
+    void buildActivePixelList(const std::array<float, 3> &hp);
 
     // Bolt-mode methods
     void loadBoltShaders();
@@ -140,6 +145,9 @@ private:
     GpuBuffer m_influencePhi, m_influencePhiU, m_influencePhiV;
     // Sampling (P0-P3)
     GpuBuffer m_rayValidity;
+    // A1: Sparse pixel culling — compacted active pixel index list (binding 55)
+    GpuBuffer m_activePixelList;
+    uint32_t m_activePixelCount = 0;
     // Phase 1: m_samplePoolSize/Mask/Pow removed — gaussianPool eliminated
 
     // B-spline CP optimization (CPU-side)
