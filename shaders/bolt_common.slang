@@ -47,7 +47,8 @@ public static const uint kMaxBolts  = 50u;
 [[vk::binding(23)]] public RWStructuredBuffer<float> yuGrid;
 [[vk::binding(24)]] public RWStructuredBuffer<float> yvGrid;
 // Binding 25: per-grid-point surface gradient accumulator (RW, 3 * gridSize^2)
-[[vk::binding(25)]] public RWStructuredBuffer<float> surfaceGradient;
+// Phase 5: uint-typed for atomic float add via InterlockedCompareExchange (matching s95_histogram.slang)
+[[vk::binding(25)]] public RWStructuredBuffer<uint> surfaceGradient;
 
 // Bolt count from host push constant (set at dispatch time)
 // Access via a global that gets set by push constant in each kernel

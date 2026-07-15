@@ -28,8 +28,13 @@ static const uint totalGridPoints = kGridSize * kGridSize;
 // Shared bindings
 [[vk::binding(12)]] [format("r32f")] RWTexture2D<float> fluxGradient;
 // binding 9 removed — Phase 1: inline Box-Muller replaces gaussianPool
-[[vk::binding(11)]] RWStructuredBuffer<float> gradPartial;
 [[vk::binding(15)]] RWStructuredBuffer<float> debugBuf;
+
+// Phase 5: fixed-point per-grid-point accumulator (replaces 386 MB gradPartial)
+// Size: totalGridPoints * 3 ints = ~12 KB. Scale: 1e4 (handles up to ±2.1e5 per grid point)
+// Using uint (not int) for InterlockedAdd compatibility — negative values handled via two's complement
+static const float kGradFixedScale = 100000.0f;  // Phase 5: 1e5 fixed-point scale
+[[vk::binding(11)]] RWStructuredBuffer<uint> gradPartialTile;  // Phase 5: reuses binding 11
 
 // Push constant
 struct BoltBackwardPC { uint numBolts; float _pad[3]; };
@@ -167,38 +172,35 @@ void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // Write to gradPartial — use gridIdx, not lid, for groupshared indexing
+    // Phase 5: InterlockedAdd to per-grid-point fixed-point accumulator (12 KB, replaces 386 MB gradPartial)
+    // Uses uint with two's complement for negative values (InterlockedAdd requires uint)
     if (spIdx < totalSpp) {
-        uint tileCount = (totalSpp + kBWGroupSize - 1u) / kBWGroupSize;
-        uint groupIdx = pixIdx * tileCount + gid.y;
-        uint base = groupIdx * totalGridPoints * kSurfaceChannels + myGridIdx * kSurfaceChannels;
-        gradPartial[base + 0u] = gs_gridGrads[myGridIdx][0];
-        gradPartial[base + 1u] = gs_gridGrads[myGridIdx][1];
-        gradPartial[base + 2u] = gs_gridGrads[myGridIdx][2];
+        uint fixedY  = uint(int(gs_gridGrads[myGridIdx][0] * kGradFixedScale));
+        uint fixedYu = uint(int(gs_gridGrads[myGridIdx][1] * kGradFixedScale));
+        uint fixedYv = uint(int(gs_gridGrads[myGridIdx][2] * kGradFixedScale));
+        uint base = myGridIdx * kSurfaceChannels;
+        uint dummy;
+        InterlockedAdd(gradPartialTile[base + 0u], fixedY, dummy);
+        InterlockedAdd(gradPartialTile[base + 1u], fixedYu, dummy);
+        InterlockedAdd(gradPartialTile[base + 2u], fixedYv, dummy);
     }
 }
 
 // ---- Stage 1b: reduceSurfaceGradients ----
-// Sums per-group per-grid-point surface gradients across all groups.
-// Accumulates into surfaceGradient (binding 25) using +=.
+// Phase 5: converts fixed-point uint accumulation from gradPartialTile → float → surfaceGradient.
+// gradPartialTile is already summed across all pixel groups by InterlockedAdd in renderBackwardBolt.
+// Uses int cast to recover two's complement negative values from uint.
 [shader("compute")]
 [numthreads(kBWGroupSize, 1, 1)]
 void reduceSurfaceGradients(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
     uint lid = gtid.x;
-    uint tileCount = (totalSpp + kBWGroupSize - 1u) / kBWGroupSize;
-    uint totalGroups = totalPixels * tileCount;
-
     for (uint gi = lid; gi < totalGridPoints; gi += kBWGroupSize) {
-        float sumY = 0.0f, sumYu = 0.0f, sumYv = 0.0f;
-        for (uint g = 0u; g < totalGroups; g++) {
-            uint base = g * totalGridPoints * kSurfaceChannels + gi * kSurfaceChannels;
-            sumY  += gradPartial[base + 0u];
-            sumYu += gradPartial[base + 1u];
-            sumYv += gradPartial[base + 2u];
-        }
-        surfaceGradient[gi * kSurfaceChannels + 0u] += sumY;
-        surfaceGradient[gi * kSurfaceChannels + 1u] += sumYu;
-        surfaceGradient[gi * kSurfaceChannels + 2u] += sumYv;
+        float sumY  = float(int(gradPartialTile[gi * kSurfaceChannels + 0u])) / kGradFixedScale;
+        float sumYu = float(int(gradPartialTile[gi * kSurfaceChannels + 1u])) / kGradFixedScale;
+        float sumYv = float(int(gradPartialTile[gi * kSurfaceChannels + 2u])) / kGradFixedScale;
+        surfaceGradient[gi * kSurfaceChannels + 0u] = asuint(sumY);
+        surfaceGradient[gi * kSurfaceChannels + 1u] = asuint(sumYu);
+        surfaceGradient[gi * kSurfaceChannels + 2u] = asuint(sumYv);
     }
 }
 
@@ -214,9 +216,9 @@ void projectBoltGradients(uint3 tid : SV_DispatchThreadID) {
 
     float grad = 0.0f;
     for (uint p = 0u; p < totalGridPoints; p++) {
-        float dLdy  = surfaceGradient[p * kSurfaceChannels + 0u];
-        float dLdyu = surfaceGradient[p * kSurfaceChannels + 1u];
-        float dLdyv = surfaceGradient[p * kSurfaceChannels + 2u];
+        float dLdy  = asfloat(surfaceGradient[p * kSurfaceChannels + 0u]);
+        float dLdyu = asfloat(surfaceGradient[p * kSurfaceChannels + 1u]);
+        float dLdyv = asfloat(surfaceGradient[p * kSurfaceChannels + 2u]);
         uint infBase = b * totalGridPoints + p;
         grad += dLdy  * influencePhi[infBase];
         grad += dLdyu * influencePhiU[infBase];
@@ -232,5 +234,5 @@ void projectBoltGradients(uint3 tid : SV_DispatchThreadID) {
 void clearSurfaceGradient(uint3 tid : SV_DispatchThreadID) {
     uint idx = tid.x;
     uint totalSlots = totalGridPoints * kSurfaceChannels;
-    if (idx < totalSlots) surfaceGradient[idx] = 0.0f;
+    if (idx < totalSlots) surfaceGradient[idx] = 0u;  // Phase 5: uint-typed buffer
 }

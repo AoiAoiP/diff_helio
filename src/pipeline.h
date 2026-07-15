@@ -155,7 +155,8 @@ private:
     std::vector<float> m_idealFlux;
     GpuBuffer m_gravityY, m_gravityBins[20], m_yuGrid, m_yvGrid, m_surfaceGradient;
     GpuBuffer m_tirCountBuf;  // TIR fallback statistics (1 uint32)
-    GpuBuffer m_boltGradPartial;
+    // Phase 5: m_boltGradPartial removed — replaced by 12 KB m_boltGradPartialTile
+    GpuBuffer m_boltGradPartialTile;
     GpuBuffer m_dummyBuf; // small dummy buffer for unused bindings
     GpuBuffer m_sunBatchFlat; // Phase 2: sun batch data (binding 41)
     std::array<float,3> m_lastSunDir = {0,1,0};

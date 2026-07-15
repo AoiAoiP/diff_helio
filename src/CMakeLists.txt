@@ -33,6 +33,15 @@ add_custom_command(TARGET bezier_opt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/data
         $<TARGET_FILE_DIR:bezier_opt>/data
+    # Phase 5: copy SPIR-V to source shaders/ so loadSpv("shaders/...") finds them
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_OUTPUT_DIR}/renderBackwardBolt.spv" "${SHADER_DIR}/renderBackwardBolt.spv"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_OUTPUT_DIR}/reduceSurfaceGradients.spv" "${SHADER_DIR}/reduceSurfaceGradients.spv"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_OUTPUT_DIR}/projectBoltGradients.spv" "${SHADER_DIR}/projectBoltGradients.spv"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SHADER_OUTPUT_DIR}/clearSurfaceGradient.spv" "${SHADER_DIR}/clearSurfaceGradient.spv"
     COMMENT "Copying shaders and data to runtime directory"
 )
 

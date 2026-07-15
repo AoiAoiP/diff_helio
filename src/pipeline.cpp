@@ -500,11 +500,9 @@ void BezierPipeline::createBoltBuffers() {
     ok = loadBin("gravity_y.bin", m_gravityY) && ok;
     if (!ok) throw std::runtime_error("Failed to load influence data. Run scripts/generate_influence.py first.");
 
-    // Bolt gradPartial: totalGroups * gridPts * 3
-    uint32_t tileCount = (m_totalSpp + 255) / 256;
-    uint32_t totalGroups = m_totalPixels * tileCount;
-    m_boltGradPartial = m_app.createBuffer(totalGroups * gridPts * 3u * sizeof(float),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+    // Phase 5: gradPartialTile (fixed-point int, per-grid-point, 12 KB) replaces 386 MB boltGradPartial
+    m_boltGradPartialTile = m_app.createBuffer(gridPts * 3u * sizeof(int32_t),
+                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
     // Dummy buffer for unused Bezier bindings (binding 5: controlY, binding 16: controlYGradient)
     m_dummyBuf = m_app.createBuffer(64, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
@@ -530,7 +528,7 @@ void BezierPipeline::createBoltBuffers() {
         {m_nGrid.buffer, 0, m_nGrid.size},                   // 7
         {m_dummyBuf.buffer, 0, 4},                           // 9 (was gaussianPool, Phase 1: dummy)
         {m_fluxPartial.buffer, 0, m_fluxPartial.size},       // 10
-        {m_boltGradPartial.buffer, 0, m_boltGradPartial.size},// 11
+        {m_boltGradPartialTile.buffer, 0, m_boltGradPartialTile.size}, // 11 (gradPartialTile, Phase 5)
         {m_boltAdamM.buffer, 0, m_boltAdamM.size},           // 13
         {m_boltAdamV.buffer, 0, m_boltAdamV.size},           // 14
         {m_s95CountBuf.buffer, 0, m_s95CountBuf.size},       // 15
@@ -625,7 +623,6 @@ void BezierPipeline::createBoltBuffers() {
     writes[48].dstBinding = 51;
     writes[48].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[48].pBufferInfo = &sbInfos[41];
-
     vkUpdateDescriptorSets(m_app.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     m_boltBuffersCreated = true;
@@ -780,9 +777,9 @@ void BezierPipeline::boltBackwardPassCmd(VkCommandBuffer cmd) {
     uint32_t tileCount = (m_totalSpp + 255) / 256;
     uint32_t gridPts = m_cfg.gridSize * m_cfg.gridSize;
 
-    // Clear surfaceGradient
-    m_app.bindPipeline(cmd, m_pipeBoltClearSurface);
-    m_app.dispatch(cmd, (gridPts * 3u + 255) / 256, 1, 1);
+    // Phase 5: Clear surfaceGradient and gradPartialTile via vkCmdFillBuffer
+    m_app.fillBufferCmd(cmd, m_surfaceGradient, 0u);
+    m_app.fillBufferCmd(cmd, m_boltGradPartialTile, 0u);
     m_app.pipelineBarrier(cmd);
 
     // Stage 1: optical backward → gradPartial
