@@ -26,7 +26,7 @@ RWTexture2D<float> renderedFlux;
 // Atomic float accumulation buffer (CAS-loop), one uint per pixel
 [[vk::binding(10)]] RWStructuredBuffer<float> fluxPartial;
 
-[[vk::binding(9)]] uniform StructuredBuffer<float> gaussianPool;
+// binding 9 removed — Phase 1: inline Box-Muller replaces gaussianPool
 
 groupshared float g_fwSums[kFWWaves];
 
@@ -138,16 +138,17 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         // Facing check (horizontal component, receiver pixel must face heliostat)
         float dc = dot(normP, float3(dir.x, 0.0f, dir.z));
         if (dc > 0.0f) {
-            // P0: Deterministic hash-based pool index
+            // Phase 1: Inline Box-Muller replaces gaussianPool lookup
             uint rayIndex = sp * totalPixels + pixelIdx;
-            uint randOffset = samplePoolOffset(rayIndex, pixelIdx, sp);
+            float g0, g1, g2, g3;
+            generateGaussianSamples(rayIndex, pixelIdx, sp, g0, g1, g2, g3);
 
             // 2-layer glass optics (original: nor1≠nor2, manual refract + fallback)
             OrthonormalBasis sBasis = computeBasis(surfNrm);
             float3 nor1 = basisToWorldDirection(sBasis,
-                normalize(float3(gaussianPool[randOffset + 0], 1.0f, gaussianPool[randOffset + 1])));
+                normalize(float3(g0 * slopeErr, 1.0f, g1 * slopeErr)));
             float3 nor2 = basisToWorldDirection(sBasis,
-                normalize(float3(gaussianPool[randOffset + 2], 1.0f, gaussianPool[randOffset + 3])));
+                normalize(float3(g2 * slopeErr, 1.0f, g3 * slopeErr)));
             float etaE = 1.0f / getHeliostatRefractiveIndex();
             float etaX = getHeliostatRefractiveIndex();
             float ndi = dot(nor1, dir);

@@ -97,7 +97,7 @@ private:
     uint32_t m_totalPixels = 0;
     uint32_t m_totalSpp = 0;
     uint32_t m_totalRays = 0;
-    uint32_t m_poolSize = 0;
+    // Phase 1: m_poolSize removed — gaussianPool eliminated
     uint32_t m_totalBackwardGroups = 0;
 
     // SPIR-V (Bezier mode)
@@ -119,7 +119,7 @@ private:
                     m_pipeBoltProject, m_pipeBoltClearSurface, m_pipeBoltAdam;
 
     // GPU resources (shared)
-    GpuBuffer m_yGrid, m_nGrid, m_gaussianPool, m_s95CountBuf, m_fluxPartial;
+    GpuBuffer m_yGrid, m_nGrid, m_s95CountBuf, m_fluxPartial;  // Phase1: m_gaussianPool removed
     GpuTexture m_renderedFlux, m_fluxGradient;
     GpuBuffer m_uboReceiver, m_uboHeliostat, m_uboSun, m_uboHelioPos, m_uboAimPoint;
 
@@ -132,9 +132,7 @@ private:
     GpuBuffer m_influencePhi, m_influencePhiU, m_influencePhiV;
     // Sampling (P0-P3)
     GpuBuffer m_rayValidity;
-    uint32_t m_samplePoolSize = 0;
-    uint32_t m_samplePoolMask = 0;
-    uint32_t m_samplePoolPow = 0;
+    // Phase 1: m_samplePoolSize/Mask/Pow removed — gaussianPool eliminated
 
     // B-spline CP optimization (CPU-side)
     std::vector<float> m_bsplineT;    // T matrix [(n_bolts) × (n_cp)], row-major

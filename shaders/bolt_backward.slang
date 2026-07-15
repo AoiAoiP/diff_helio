@@ -27,7 +27,7 @@ static const uint totalGridPoints = kGridSize * kGridSize;
 
 // Shared bindings
 [[vk::binding(12)]] [format("r32f")] RWTexture2D<float> fluxGradient;
-[[vk::binding(9)]]  uniform StructuredBuffer<float> gaussianPool;
+// binding 9 removed — Phase 1: inline Box-Muller replaces gaussianPool
 [[vk::binding(11)]] RWStructuredBuffer<float> gradPartial;
 [[vk::binding(15)]] RWStructuredBuffer<float> debugBuf;
 
@@ -142,9 +142,11 @@ void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         // P2: skip dead rays
         if (0u == ((rayValidity[rayIndex >> 5u] >> (rayIndex & 31u)) & 1u)) { myGridIdx = 0; }
         else {
-        uint randOffset = samplePoolOffset(rayIndex, pixIdx, spIdx);
-        float3 pp1 = normalize(float3(gaussianPool[randOffset + 0], 1.0f, gaussianPool[randOffset + 1]));
-        float3 pp2 = normalize(float3(gaussianPool[randOffset + 2], 1.0f, gaussianPool[randOffset + 3]));
+        float bg0, bg1, bg2, bg3;
+        generateGaussianSamples(rayIndex, pixIdx, spIdx, bg0, bg1, bg2, bg3);
+        float sigma = getHeliostatSlopeError();
+        float3 pp1 = normalize(float3(bg0 * sigma, 1.0f, bg1 * sigma));
+        float3 pp2 = normalize(float3(bg2 * sigma, 1.0f, bg3 * sigma));
 
         myGridIdx = zid * kGridSize + xid;
 

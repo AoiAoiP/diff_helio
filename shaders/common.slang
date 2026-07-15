@@ -30,7 +30,7 @@ public struct HeliostatParams {
     float reflectiveArea;
     float reflectivity;
     float _pad0;            // was reflectionOnly
-    float poolMask;         // P3: pool mask for Sobol indexing
+    float _pad1;            // was poolMask (Phase 1: gaussianPool removed)
     float cullDirX;         // P4: dir to heliostat X (cylinder half-cull)
     float cullDirZ;         // P4: dir to heliostat Z
 };
@@ -191,16 +191,41 @@ public float random01(uint a, uint b, uint c, uint seed) {
     return (float(mixBits(a * 0x9E3779B9u + b * 0x7F4A7C15u + c * 0x94D049BBu + seed * 0x5BD1E995u)) + 0.5f) * (1.0f / 4294967296.0f);
 }
 
-// P0: Deterministic hash-based pool offset (adopted from diffspt)
-// Returns byte offset (in floats) into gaussianPool for 6 samples.
-public uint samplePoolOffset(uint rayIndex, uint pixelIndex, uint sppIndex) {
-    uint mix = rayIndex * 0x9E3779B9u;
-    mix ^= pixelIndex * 0x94D049BBu;
-    mix += sppIndex * 0x5BD1E995u;
-    mix ^= kSamplingSeed * 0xA5A5A5A5u;
-    mix = mixBits(mix);
-    uint poolMaskUint = asuint(heliostat.poolMask);
-    return (mix & poolMaskUint) * 6u;
+public static const float kInvU32 = 1.0f / 4294967296.0f;
+
+// Phase 1: Inline Box-Muller — generates 4 independent N(0,1) samples
+// deterministically from (rayIndex, pixelIndex, sppIndex).
+// Replaces the 1.5 GB gaussianPool lookup table.
+public void generateGaussianSamples(
+    uint rayIndex, uint pixelIndex, uint sppIndex,
+    out float g0, out float g1, out float g2, out float g3)
+{
+    uint base = rayIndex * 0x9E3779B9u;
+    base ^= pixelIndex * 0x94D049BBu;
+    base += sppIndex * 0x5BD1E995u;
+    base ^= kSamplingSeed * 0xA5A5A5A5u;
+
+    uint h0 = mixBits(base);
+    uint h1 = mixBits(base ^ 0xDEADBEEFu);
+    uint h2 = mixBits(base ^ 0xCAFEBABEu);
+    uint h3 = mixBits(base ^ 0x8BADF00Du);
+
+    float u0 = (float(h0) + 0.5f) * kInvU32;
+    float u1 = (float(h1) + 0.5f) * kInvU32;
+    float u2 = (float(h2) + 0.5f) * kInvU32;
+    float u3 = (float(h3) + 0.5f) * kInvU32;
+
+    // Box-Muller pair 1
+    float r1 = sqrt(-2.0f * log(max(u0, 1e-10f)));
+    float theta1 = 2.0f * kPi * u1;
+    g0 = r1 * cos(theta1);
+    g1 = r1 * sin(theta1);
+
+    // Box-Muller pair 2
+    float r2 = sqrt(-2.0f * log(max(u2, 1e-10f)));
+    float theta2 = 2.0f * kPi * u3;
+    g2 = r2 * cos(theta2);
+    g3 = r2 * sin(theta2);
 }
 
 // P2: Ray validity cache (binding 29)

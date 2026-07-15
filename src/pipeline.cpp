@@ -29,16 +29,7 @@ BezierPipeline::BezierPipeline(VulkanApp &app, const Config &cfg) : m_app(app), 
     m_totalPixels = cfg.pixelWidth * cfg.pixelHeight;
     m_totalSpp = cfg.gridSize * cfg.gridSize;
     m_totalRays = m_totalPixels * m_totalSpp;
-    // P3: Power-of-two pool size for mask-based indexing
-    {
-        uint32_t minSize = m_totalRays * 6; // need at least this many floats
-        uint32_t pow = 0;
-        while ((1u << pow) < minSize) pow++;
-        m_samplePoolPow = std::max(cfg.samplePoolPow, pow);
-        m_samplePoolSize = 1u << m_samplePoolPow;
-        m_samplePoolMask = m_samplePoolSize - 1u;
-    }
-    m_poolSize = m_samplePoolSize; // keep for backward compat
+    // Phase 1: pool size computation removed — inline Box-Muller needs no lookup table
     uint32_t tileCount = (m_totalSpp + 255) / 256;
     m_totalBackwardGroups = m_totalPixels * tileCount;
     loadShaders();
@@ -223,82 +214,8 @@ void BezierPipeline::createBuffersAndTextures() {
     m_yGrid    = m_app.createBuffer(kSunBatchSize * gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
     m_nGrid    = m_app.createBuffer(kSunBatchSize * gridPts * 4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
-    // P1: Generate Sobol-based Gaussian perturbation pool
-    // 6-dimensional Sobol sequence with Owen scrambling + inverse_erf
-    {
-        const uint32_t samplesPerRay = 6; // 2 perturb vectors × 3 components
-        const uint32_t poolSize = m_samplePoolSize;
-        std::vector<float> pool(poolSize * samplesPerRay);
-
-        // Sobol direction numbers for dimensions 0-5
-        struct SobolDim { uint32_t degree; uint32_t a; std::array<uint32_t, 4> m; };
-        const std::array<SobolDim, 6> sobolDims = {{
-            {1, 0, {1, 0, 0, 0}},
-            {2, 1, {1, 3, 0, 0}},
-            {3, 1, {1, 3, 1, 0}},
-            {3, 2, {1, 1, 1, 0}},
-            {4, 1, {1, 1, 3, 3}},
-            {4, 4, {1, 3, 5, 13}},
-        }};
-
-        // Build direction numbers for each dimension
-        std::array<std::array<uint32_t, 32>, 6> directions;
-        for (uint32_t dim = 0; dim < 6; dim++) {
-            auto &dirs = directions[dim];
-            dirs.fill(0);
-            for (uint32_t i = 0; i < sobolDims[dim].degree; i++)
-                dirs[i] = sobolDims[dim].m[i] << (31u - i);
-            for (uint32_t i = sobolDims[dim].degree; i < 32; i++) {
-                uint32_t val = dirs[i - sobolDims[dim].degree] ^ (dirs[i - sobolDims[dim].degree] >> sobolDims[dim].degree);
-                for (uint32_t j = 1; j < sobolDims[dim].degree; j++)
-                    if ((sobolDims[dim].a >> (sobolDims[dim].degree - 1u - j)) & 1u) val ^= dirs[i - j];
-                dirs[i] = val;
-            }
-        }
-
-        // Owen scrambling: randomize each dimension
-        std::mt19937 scrambleRng(m_cfg.randomSeed ^ 0xCAFEBABEu);
-        std::array<uint32_t, 6> scrambles;
-        for (auto &s : scrambles) s = scrambleRng();
-
-        // inverse_erf approximation
-        auto invErf = [](float x) -> float {
-            constexpr float a = 0.147f;
-            float cx = std::clamp(x, -0.999999f, 0.999999f);
-            float ln1mx2 = std::log(1.0f - cx * cx);
-            float t1 = 2.0f / (3.14159265f * a) + ln1mx2 * 0.5f;
-            float t2 = ln1mx2 / a;
-            float rad = std::max(t1 * t1 - t2, 0.0f);
-            return std::copysign(std::sqrt(std::sqrt(rad) - t1), cx);
-        };
-
-        // Generate Sobol points, transform to Gaussian via inverse_erf
-        constexpr float kInvU32 = 1.0f / 4294967296.0f;
-        constexpr float kSobolEps = 1.0e-6f;
-        std::array<uint32_t, 6> sobolState = {};
-        for (uint32_t si = 0; si < poolSize; si++) {
-            if (si != 0) {
-                uint32_t dirIdx = std::countr_zero(si);
-                for (uint32_t dim = 0; dim < 6; dim++)
-                    sobolState[dim] ^= directions[dim][dirIdx];
-            }
-            for (uint32_t dim = 0; dim < 6; dim++) {
-                uint32_t scrambled = sobolState[dim] ^ scrambles[dim];
-                float uniform = (static_cast<float>(scrambled) + 0.5f) * kInvU32;
-                uniform = std::clamp(uniform, kSobolEps, 1.0f - kSobolEps);
-                // Transform to N(0, slopeErr²) — pool stores raw N(0,1),
-                // shader uses (gx, 1, gz)/norm → no rescaling needed
-                // N(0, slopeErr²): scale by slopeError to match old Taichi pool convention
-                float gaussian = m_cfg.slopeError * std::sqrt(2.0f) * invErf(2.0f * uniform - 1.0f);
-                pool[si * samplesPerRay + dim] = gaussian;
-            }
-        }
-
-        size_t totalFloats = poolSize * samplesPerRay;
-        m_gaussianPool = m_app.createBuffer(totalFloats * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-        m_app.uploadBuffer(m_gaussianPool, pool.data(), totalFloats * sizeof(float));
-        fmt::print("  Sobol pool: {} floats (2^{}), seed={}\n", totalFloats, m_samplePoolPow, m_cfg.randomSeed);
-    }
+    // Phase 1: gaussianPool removed — inline Box-Muller replaces precomputed Sobol pool.
+    // This saves ~1.5 GB GPU memory and eliminates ~11.6B global memory reads per iteration.
 
     // P2: Ray validity cache (1 bit per ray)
     m_rayValidity = m_app.createBuffer(((m_totalRays + 31u) / 32u) * sizeof(uint32_t),
@@ -355,7 +272,7 @@ void BezierPipeline::createBuffersAndTextures() {
         {m_controlY.buffer, 0, m_controlY.size},             // 5
         {m_yGrid.buffer, 0, m_yGrid.size},                   // 6
         {m_nGrid.buffer, 0, m_nGrid.size},                   // 7
-        {m_gaussianPool.buffer, 0, m_gaussianPool.size},     // 9
+        {m_s95CountBuf.buffer, 0, 4},                        // 9 (was gaussianPool, Phase 1: dummy)
         {m_fluxPartial.buffer, 0, m_fluxPartial.size},       // 10
         {m_gradPartial.buffer, 0, m_gradPartial.size},       // 11
         {m_adamM.buffer, 0, m_adamM.size},                   // 13
@@ -611,7 +528,7 @@ void BezierPipeline::createBoltBuffers() {
         {m_dummyBuf.buffer, 0, m_dummyBuf.size},             // 5: controlY (dummy)
         {m_yGrid.buffer, 0, m_yGrid.size},                   // 6
         {m_nGrid.buffer, 0, m_nGrid.size},                   // 7
-        {m_gaussianPool.buffer, 0, m_gaussianPool.size},     // 9
+        {m_dummyBuf.buffer, 0, 4},                           // 9 (was gaussianPool, Phase 1: dummy)
         {m_fluxPartial.buffer, 0, m_fluxPartial.size},       // 10
         {m_boltGradPartial.buffer, 0, m_boltGradPartial.size},// 11
         {m_boltAdamM.buffer, 0, m_boltAdamM.size},           // 13
@@ -1214,7 +1131,7 @@ void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::a
     helio[5]=m_cfg.heliostatWidth*m_cfg.heliostatLength;
     helio[6]=m_cfg.reflectivity;
     helio[7]=0.0f; // always refraction (was reflectionOnly)
-    std::memcpy(&helio[8], &m_samplePoolMask, sizeof(uint32_t)); // poolMask (P3)
+    helio[8]=0.0f; // was poolMask (Phase 1: gaussianPool removed)
     // P4: cylinder half-face culling direction (from receiver center to heliostat)
     float hdx = hp[0] - m_cfg.receiverPosition[0];
     float hdz = hp[2] - m_cfg.receiverPosition[2];

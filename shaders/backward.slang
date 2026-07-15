@@ -144,7 +144,7 @@ float computePixelEnergy(
 
 // ---- Main backward render kernel ----
 [[vk::binding(12)]] [format("r32f")] RWTexture2D<float> fluxGradient;
-[[vk::binding(9)]]  uniform StructuredBuffer<float> gaussianPool;
+// binding 9 removed — Phase 1: inline Box-Muller replaces gaussianPool
 [[vk::binding(11)]] RWStructuredBuffer<float> gradPartial;
 [[vk::binding(16)]] RWStructuredBuffer<float> controlYGradientOut;
 [[vk::binding(15)]] RWStructuredBuffer<float> debugBuf;
@@ -198,10 +198,12 @@ void renderBackward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         bwd_diff(testNormal)(n00,n01,n02,n03,n10,n11,n12,n13,n20,n21,n22,n23,n30,n31,n32,n33, 0.5f, 0.5f, hs, 1.0f);
         debugBuf[1] = n00.d;
 
-        // Step 3: Glass optics
-        uint diagRandOffset = samplePoolOffset(0u, 0u, 0u);
-        float3 pp1 = normalize(float3(gaussianPool[diagRandOffset + 0], 1.0f, gaussianPool[diagRandOffset + 1]));
-        float3 pp2 = normalize(float3(gaussianPool[diagRandOffset + 2], 1.0f, gaussianPool[diagRandOffset + 3]));
+        // Step 3: Glass optics (Phase 1: inline Box-Muller)
+        float dg0, dg1, dg2, dg3;
+        generateGaussianSamples(0u, 0u, 0u, dg0, dg1, dg2, dg3);
+        float sigma = getHeliostatSlopeError();
+        float3 pp1 = normalize(float3(dg0 * sigma, 1.0f, dg1 * sigma));
+        float3 pp2 = normalize(float3(dg2 * sigma, 1.0f, dg3 * sigma));
         var g00=diffPair(c00,0.0f); var g01=diffPair(c01,0.0f); var g02=diffPair(c02,0.0f); var g03=diffPair(c03,0.0f);
         var g10=diffPair(c10,0.0f); var g11=diffPair(c11,0.0f); var g12=diffPair(c12,0.0f); var g13=diffPair(c13,0.0f);
         var g20=diffPair(c20,0.0f); var g21=diffPair(c21,0.0f); var g22=diffPair(c22,0.0f); var g23=diffPair(c23,0.0f);
@@ -238,9 +240,11 @@ void renderBackward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         // P2: skip dead rays
         if (0u == ((rayValidity[rayIndex >> 5u] >> (rayIndex & 31u)) & 1u)) { localGrads[0]=0; }
         else {
-        uint randOffset = samplePoolOffset(rayIndex, pixIdx, spIdx);
-        float3 pp1 = normalize(float3(gaussianPool[randOffset + 0], 1.0f, gaussianPool[randOffset + 1]));
-        float3 pp2 = normalize(float3(gaussianPool[randOffset + 2], 1.0f, gaussianPool[randOffset + 3]));
+        float bg0, bg1, bg2, bg3;
+        generateGaussianSamples(rayIndex, pixIdx, spIdx, bg0, bg1, bg2, bg3);
+        float sigma = getHeliostatSlopeError();
+        float3 pp1 = normalize(float3(bg0 * sigma, 1.0f, bg1 * sigma));
+        float3 pp2 = normalize(float3(bg2 * sigma, 1.0f, bg3 * sigma));
 
         var d00=diffPair(readCY(0u,0u),0.0f); var d01=diffPair(readCY(0u,1u),0.0f);
         var d02=diffPair(readCY(0u,2u),0.0f); var d03=diffPair(readCY(0u,3u),0.0f);
