@@ -584,6 +584,54 @@ void VulkanApp::endComputePass(ComputePass &pass) {
     vkFreeCommandBuffers(m_device, m_cmdPool, 1, &pass.cmd);
 }
 
+// Phase 2: Batched compute pass — returns raw cmd+buf+fence, caller emits multiple dispatches
+RawComputePass VulkanApp::beginComputePassRaw() {
+    RawComputePass pass;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device, &fenceInfo, nullptr, &pass.fence);
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_cmdPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+    vkAllocateCommandBuffers(m_device, &allocInfo, &pass.cmd);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(pass.cmd, &beginInfo);
+
+    return pass;
+}
+
+void VulkanApp::submitAndWait(RawComputePass &pass) {
+    vkEndCommandBuffer(pass.cmd);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &pass.cmd;
+    vkQueueSubmit(m_computeQueue, 1, &submitInfo, pass.fence);
+    vkWaitForFences(m_device, 1, &pass.fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device, pass.fence, nullptr);
+    vkFreeCommandBuffers(m_device, m_cmdPool, 1, &pass.cmd);
+}
+
+// Phase 2: Fill buffer from within an existing command buffer (avoids CPU upload sync)
+void VulkanApp::fillBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, uint32_t value) {
+    vkCmdFillBuffer(cmd, buffer.buffer, 0, buffer.size, value);
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
 void VulkanApp::waitIdle() { vkQueueWaitIdle(m_computeQueue); }
 
 void VulkanApp::bindPipeline(VkCommandBuffer cmd, const ComputePipeline &pipeline) {

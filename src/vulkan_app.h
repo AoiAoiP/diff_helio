@@ -42,6 +42,12 @@ struct ComputePass {
     VkFence fence = VK_NULL_HANDLE;
 };
 
+// Phase 2: Raw compute pass for batched dispatch (multiple dispatches per submit)
+struct RawComputePass {
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+};
+
 class VulkanApp {
 public:
     VulkanApp();
@@ -85,6 +91,12 @@ public:
     // Command execution
     ComputePass beginComputePass();
     void endComputePass(ComputePass &pass);
+
+    // Phase 2: Batched dispatch — multiple dispatches per submit (reduces fence waits)
+    RawComputePass beginComputePassRaw();
+    void submitAndWait(RawComputePass &pass);
+    void fillBufferCmd(VkCommandBuffer cmd, const GpuBuffer &buffer, uint32_t value);
+
     void waitIdle();
 
     // Dispatch helpers

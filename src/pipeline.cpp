@@ -767,50 +767,93 @@ void BezierPipeline::uploadSurfaceFromFile(const std::string &path) {
 }
 
 void BezierPipeline::boltBackwardPass() {
+    // Legacy: one-pass-per-dispatch. Use boltBackwardPassCmd in hot path.
+    uint32_t gridPts = m_cfg.gridSize * m_cfg.gridSize;
+    auto pass = m_app.beginComputePassRaw();
+    boltBackwardPassCmd(pass.cmd);
+    m_app.submitAndWait(pass);
+}
+
+// Phase 2: Batched backward pass — all 4 stages in single command buffer
+void BezierPipeline::boltBackwardPassCmd(VkCommandBuffer cmd) {
     uint32_t n = m_cfg.numBolts;
     uint32_t tileCount = (m_totalSpp + 255) / 256;
     uint32_t gridPts = m_cfg.gridSize * m_cfg.gridSize;
 
-    // Clear surfaceGradient before accumulation
-    {
-        auto pass = m_app.beginComputePass();
-        m_app.bindPipeline(pass.cmd, m_pipeBoltClearSurface);
-        m_app.dispatch(pass.cmd, (gridPts * 3u + 255) / 256, 1, 1);
-        m_app.pipelineBarrier(pass.cmd);
-        m_app.endComputePass(pass);
-    }
+    // Clear surfaceGradient
+    m_app.bindPipeline(cmd, m_pipeBoltClearSurface);
+    m_app.dispatch(cmd, (gridPts * 3u + 255) / 256, 1, 1);
+    m_app.pipelineBarrier(cmd);
 
-    // Stage 1: optical backward → per-sample surface gradients → gradPartial
-    {
-        auto pass = m_app.beginComputePass();
-        m_app.bindPipeline(pass.cmd, m_pipeBoltBackward);
-        struct { uint32_t numBolts; float _pad[3]; } bwPC;
-        bwPC.numBolts = n; bwPC._pad[0] = 0; bwPC._pad[1] = 0; bwPC._pad[2] = 0;
-        m_app.pushConstants(pass.cmd, m_pipeBoltBackward.layout, &bwPC, sizeof(bwPC));
-        m_app.dispatch(pass.cmd, m_totalPixels, tileCount, 1);
-        m_app.pipelineBarrier(pass.cmd);
-        m_app.endComputePass(pass);
-    }
+    // Stage 1: optical backward → gradPartial
+    m_app.bindPipeline(cmd, m_pipeBoltBackward);
+    struct { uint32_t numBolts; float _pad[3]; } bwPC;
+    bwPC.numBolts = n; bwPC._pad[0] = 0; bwPC._pad[1] = 0; bwPC._pad[2] = 0;
+    m_app.pushConstants(cmd, m_pipeBoltBackward.layout, &bwPC, sizeof(bwPC));
+    m_app.dispatch(cmd, m_totalPixels, tileCount, 1);
+    m_app.pipelineBarrier(cmd);
 
     // Stage 1b: reduce gradPartial → surfaceGradient
-    {
-        auto pass = m_app.beginComputePass();
-        m_app.bindPipeline(pass.cmd, m_pipeBoltBackwardReduce);
-        m_app.dispatch(pass.cmd, 1, 1, 1);
-        m_app.pipelineBarrier(pass.cmd);
-        m_app.endComputePass(pass);
-    }
+    m_app.bindPipeline(cmd, m_pipeBoltBackwardReduce);
+    m_app.dispatch(cmd, 1, 1, 1);
+    m_app.pipelineBarrier(cmd);
 
     // Stage 2: project surfaceGradient → boltHeightGradient
-    {
-        auto pass = m_app.beginComputePass();
-        m_app.bindPipeline(pass.cmd, m_pipeBoltProject);
-        struct { uint32_t numBolts; float _pad[3]; } projPC;
-        projPC.numBolts = n; projPC._pad[0] = 0; projPC._pad[1] = 0; projPC._pad[2] = 0;
-        m_app.pushConstants(pass.cmd, m_pipeBoltProject.layout, &projPC, sizeof(projPC));
-        m_app.dispatch(pass.cmd, (n + 49) / 50, 1, 1); // kMaxBolts=50 threads per group
-        m_app.endComputePass(pass);
-    }
+    m_app.bindPipeline(cmd, m_pipeBoltProject);
+    struct { uint32_t numBolts; float _pad[3]; } projPC;
+    projPC.numBolts = n; projPC._pad[0] = 0; projPC._pad[1] = 0; projPC._pad[2] = 0;
+    m_app.pushConstants(cmd, m_pipeBoltProject.layout, &projPC, sizeof(projPC));
+    m_app.dispatch(cmd, (n + 49) / 50, 1, 1);
+}
+
+// Phase 2: Surface forward dispatch (caller uploads sunBatchFlat before pass)
+void BezierPipeline::boltForwardSurfaceCmd(VkCommandBuffer cmd, uint32_t batchCount) {
+    m_app.bindPipeline(cmd, m_pipeBoltSurface);
+    struct { uint32_t numBolts; uint32_t disableGravity; uint32_t sunBatchCount; uint32_t _pad; } pc;
+    pc.numBolts = m_cfg.numBolts;
+    pc.disableGravity = m_cfg.disableGravity ? 1u : 0u;
+    pc.sunBatchCount = batchCount;
+    pc._pad = 0;
+    m_app.pushConstants(cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
+    m_app.dispatch(cmd, 1, 1, batchCount);
+    m_app.pipelineBarrier(cmd);
+}
+
+// Phase 2: Forward render dispatches within existing command buffer
+void BezierPipeline::forwardRenderCmd(VkCommandBuffer cmd) {
+    // 1. Clear flux
+    m_app.bindPipeline(cmd, m_pipeClear);
+    m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
+    m_app.pipelineBarrier(cmd);
+    // 2. Forward render
+    m_app.bindPipeline(cmd, m_pipeForward);
+    uint32_t tileCount = (m_totalSpp + 255) / 256;
+    m_app.dispatch(cmd, tileCount, m_totalPixels, 1);
+    m_app.pipelineBarrier(cmd);
+    // 3. Finalize: atomic buffer → texture
+    m_app.bindPipeline(cmd, m_pipeFinalize);
+    m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
+    m_app.pipelineBarrier(cmd);
+}
+
+// Phase 2: Clear ray validity via vkCmdFillBuffer (avoids CPU upload sync)
+void BezierPipeline::clearRayValidityCmd(VkCommandBuffer cmd) {
+    m_app.fillBufferCmd(cmd, m_rayValidity, 0u);
+}
+
+// Phase 2: Clear flux gradient within existing command buffer
+void BezierPipeline::clearFluxGradientCmd(VkCommandBuffer cmd) {
+    m_app.bindPipeline(cmd, m_pipeClearFluxGrad);
+    m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
+    m_app.pipelineBarrier(cmd);
+}
+
+// Phase 2: Compute S95 loss within existing command buffer
+void BezierPipeline::computeS95LossCmd(VkCommandBuffer cmd, float s95Level) {
+    m_app.bindPipeline(cmd, m_pipeLoss);
+    m_app.pushConstants(cmd, m_pipeLoss.layout, &s95Level, sizeof(float));
+    m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
+    m_app.pipelineBarrier(cmd);
 }
 
 void BezierPipeline::boltAdamStep(uint32_t iteration) {
@@ -1497,18 +1540,32 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             for (size_t si = 0; si < trainDirs.size(); si++) {
                 const auto &sd = trainDirs[si];
                 updateUniforms(sd, hc.position, aimPoint);
-                boltForwardSurface(trainDirs, hc.position, aimPoint, (int)si, 1);
-                clearRayValidity();  // P2: clear before each sun direction
-                forwardRender(false);
+
+                // Upload sun batch data (must happen before GPU pass)
+                {
+                    float cosTheta = computeCosTheta(sd, hc.position, aimPoint);
+                    uint32_t lo, hi; float gt;
+                    packGravityParams(cosTheta, lo, hi, gt);
+                    std::vector<float> batch(8, 0.0f);
+                    batch[0] = sd[0]; batch[1] = sd[1]; batch[2] = sd[2];
+                    std::memcpy(&batch[4], &lo, 4); std::memcpy(&batch[5], &hi, 4); batch[6] = gt;
+                    m_app.uploadBuffer(m_sunBatchFlat, batch.data(), 8 * sizeof(float));
+                }
+
+                // Phase 2 batch 1: boltForward + clearRayValidity + forwardRender
+                {
+                    auto pass = m_app.beginComputePassRaw();
+                    boltForwardSurfaceCmd(pass.cmd, 1);
+                    clearRayValidityCmd(pass.cmd);
+                    forwardRenderCmd(pass.cmd);
+                    m_app.submitAndWait(pass);
+                }
 
                 auto flux = readFlux();
                 float s95Level = computeS95Level(flux);
                 if (s95Level > 0) {
-                    clearFluxGradient();
-
                     if (m_useMSELoss && !m_idealFlux.empty()) {
-                        // MSE loss: dL/dflux = 2*(flux - flux_ideal) / N
-                        // Matching ideal flux pixel-by-pixel = matching its S95
+                        // MSE loss: compute gradient on CPU, upload to fluxGradient
                         std::vector<float> mseGrad(m_totalPixels);
                         float mseLoss = 0.0f;
                         for (uint32_t p = 0; p < m_totalPixels; p++) {
@@ -1519,11 +1576,28 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                         mseLoss /= m_totalPixels;
                         totalLoss += mseLoss;
                         m_app.uploadTexture(m_fluxGradient, mseGrad.data());
+                        // Phase 2 batch: backward only (MSE gradient already uploaded)
+                        auto pass = m_app.beginComputePassRaw();
+                        boltBackwardPassCmd(pass.cmd);
+                        m_app.submitAndWait(pass);
                     } else {
-                        totalLoss += computeS95Loss(s95Level);
+                        // Phase 2 batch 2: clearFluxGradient + computeS95Loss + boltBackward
+                        {
+                            auto pass = m_app.beginComputePassRaw();
+                            clearFluxGradientCmd(pass.cmd);
+                            computeS95LossCmd(pass.cmd, s95Level);
+                            boltBackwardPassCmd(pass.cmd);
+                            m_app.submitAndWait(pass);
+                        }
+                        // Compute scalar loss from already-read flux (avoids extra readFlux)
+                        float level = std::max(s95Level, 1e-6f);
+                        float lossVal = 0.0f;
+                        for (float f : flux) {
+                            float s = 1.0f / (1.0f + std::exp(-6.0f * (f / level - 1.0f)));
+                            lossVal += s;
+                        }
+                        totalLoss += lossVal;
                     }
-
-                    boltBackwardPass();
                 }
             }
             if (m_cfg.useBSpline) {

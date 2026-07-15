@@ -84,6 +84,14 @@ private:
     void boltBackwardPass();
     void boltAdamStep(uint32_t iteration);
 
+    // Phase 2: Batched dispatch helpers (operate within existing command buffer)
+    void boltForwardSurfaceCmd(VkCommandBuffer cmd, uint32_t batchCount);
+    void forwardRenderCmd(VkCommandBuffer cmd);
+    void clearRayValidityCmd(VkCommandBuffer cmd);
+    void clearFluxGradientCmd(VkCommandBuffer cmd);
+    void computeS95LossCmd(VkCommandBuffer cmd, float s95Level);
+    void boltBackwardPassCmd(VkCommandBuffer cmd);
+
     // B-spline CP optimization
     void loadBSplineMatrix();
     void cpToBoltHeights();
