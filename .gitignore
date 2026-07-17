@@ -22,7 +22,6 @@ Thumbs.db
 
 # Claude / AI assistant
 .claude/
-CLAUDE.md
 
 # Third-party libraries (fetched by CMake FetchContent)
 third_party/

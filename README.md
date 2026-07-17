@@ -1,32 +1,17 @@
-# diff_helio — 物理可微分定日镜面型优化
+# Diff Helio — 可微定日镜面型优化
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![C++](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/)
-[![Vulkan](https://img.shields.io/badge/Vulkan-1.4-red.svg)](https://www.vulkan.org/)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
-
-基于 **GPU 加速的可微分渲染管线**，通过优化 35 根螺栓推拉高度最小化圆柱接收器上的 S95 光斑面积。采用 **TPS（薄板样条）物理代理模型** + **FEA 重力场**，在局部板坐标系下实现严格线性的螺栓→曲面映射。全 GPU 自动微分（Slang `bwd_diff`）支持端到端优化。
+基于 **Vulkan GPU 光线追踪 + Slang 自动微分**的定日镜螺栓调高优化管线。通过 TPS（薄板样条）物理代理模型将 35 根螺栓推拉高度映射为镜面变形，最小化圆柱接收器上的 S95 光斑面积。
 
 ---
-
-## 当前状态 (2026-07-15)
-
-| 模块 | 状态 | 说明 |
-|------|:---:|------|
-| TPS 代理模型 | ✅ | 单位分解误差 < 10⁻⁶，自影响 ~1.0 |
-| 重力模型 | ✅ | 20-bin FEA 插值 (10°–80°)，已知 bin 可用 |
-| 端到端优化 | ✅ | 32×32 网格，S95 从 227 → **52.35 m²** (77% 改善, 300 iter) |
-| 梯度验证 | ✅ | AD/FD sign=88.6%, cosine=0.97 (alt init) |
-| 性能优化 | ✅ | Phase 1/2/5 已完成，532s/300iter, ~720 MB VRAM |
 
 ## 快速开始
 
 ### 环境要求
 
-- **Windows** + Visual Studio 2022
-- **Vulkan SDK** ≥ 1.4.341.1
-- **CMake** ≥ 3.25
-- **Python** ≥ 3.10 (numpy, scipy)
+- Windows, Visual Studio 2022, CMake ≥ 3.20
+- Vulkan SDK ≥ 1.4.341.1
+- Python ≥ 3.10 (numpy, scipy) — 仅数据准备
+- NVIDIA GPU（测试：RTX 4070 SUPER 12GB）
 
 ### 编译
 
@@ -36,200 +21,213 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-依赖项 (fmt, glm, Slang) 通过 CMake `FetchContent` 自动下载，无需手动安装。
+依赖项 (fmt, glm, Slang) 通过 CMake `FetchContent` 自动下载。强制重编译 shader：`rm build/shaders/*.spv && cmake --build build --config Release`。
 
-强制重编译 shader：`rm build/shaders/*.spv && cmake --build build --config Release`
+### 数据准备
+
+```bash
+# 默认配置（35 螺栓 7×5, 32×32 网格, 20-bin 重力）
+python scripts/generate_proxy_model.py all
+
+# 自定义螺栓布局
+python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x6.json
+
+# 通过 ANSYS MAPDL 批量生成 20-bin 重力（需 ANSYS 许可证）
+python scripts/generate_proxy_model.py all-ansys
+```
+
+输出至 `data_proxy/`（默认）：`influence_phi.bin`、`influence_phi_u/v.bin`、`gravity_{angle}deg.bin`（20 个角度）、`gravity_angles.json`、`gravity_y.bin`。
 
 ### 运行优化
 
 ```bash
-# 生成 TPS 影响函数 (~1s)
-python scripts/generate_tps_influence.py --output data_vsm_mnvn_tik32
+# 四面镜优化（推荐：200 iter, lr=4e-4 constant, ~20 min）
+./build/src/Release/bezier_opt.exe configs/bolt_optimize_4mirror_200iter.json
 
-# 运行优化 (300 轮, RTX 4070 SUPER ~9 分钟)
-./build/src/Release/bezier_opt.exe configs/bolt_vsm_mnvn_300iter.json
-```
+# North 300m 单镜（200 iter, ~7 min）
+./build/src/Release/bezier_opt.exe configs/bolt_optimize_north_200iter.json
 
-### 其他运行模式
-
-```bash
-# 光斑输出（完整 C++ Vulkan 光追）
+# 光斑输出
 ./build/src/Release/bezier_opt.exe --dump-flux --surface-file <path> <config>
 
-# 梯度检验（螺栓模式）
+# 梯度检验
 ./build/src/Release/bezier_opt.exe --check-grad <config>
 ```
 
+### 螺栓布局
+
+`configs/bolt_layouts/` 目录定义螺栓排布：
+
+| 布局 | 螺栓数 | 说明 |
+|------|:---:|------|
+| `7x5_default.json` | 35 (7×5) | 当前生产配置，边距 8% |
+| `6x6.json` | 36 (6×6) | 对称方案 |
+
 ---
 
-## 管线数据流
+## 核心方法
+
+### 物理代理模型
+
+定日镜在板局部坐标系下的法向位移由两项叠加：
+
+$$w(\mathbf{r}) = UY_{\text{grav}}^{\text{FEA}}(\theta) + \sum_{b=1}^{35} h_b \cdot \phi_b^{\text{TPS}}(\mathbf{r})$$
+
+- **重力项**：20 个稠密角度的 FEA NLGEOM-ON 解的双线性插值（10°–80°, 间距 ≤4°）
+- **螺栓项**：35 个 TPS 影响函数的线性叠加。$\phi_b$ 为螺栓 $b$ 的单位位移响应，满足单位分解 $\sum\phi_b \equiv 1$（PV < 10⁻⁶）
+
+模型定义在板局部坐标系下，$\partial w / \partial h_b = \phi_b$ 严格成立，链式法则直接适用。
+
+### 可微光线追踪
 
 ```
-螺栓高度 h[35] + 影响函数 φ_b/∂φ_b [35×1024] + 20-bin 重力 FEA bins
-       ↓ boltForwardSurface() → GPU: computeBoltSurface
-曲面 yGrid + 法向 nGrid + yuGrid + yvGrid (32×32)
-       ↓ forwardRender() → GPU: clearFlux → renderForward → finalizeFlux
-光线追踪 (玻璃双折射, Buie CSR=0.01 太阳, Wang hash + Box-Muller, 1 mrad 斜率误差)
-       ↓
-能流分布 renderedFlux (157×50)
-       ↓ readFlux() → computeS95Level() [CPU 二分搜索]
-       ↓ computeS95Loss() [GPU sigmoid 梯度写入 fluxGradient]
-S95 sigmoid 损失 → fluxGradient (dL/dflux 逐像素)
-       ↓ boltBackwardPassCmd() 两阶段 (单 command buffer)
-  Stage 1: renderBackwardBolt (自微分光追)
-           → InterlockedAdd 到 gradPartialTile (12 KB 定点数累加器)
-  Stage 2: reduceSurfaceGradients (int→float 转换, 写入 surfaceGradient)
-  Stage 3: projectBoltGradients
-           力学梯度: dL/dh_b = Σ_p [dL/dy_p·φ_b + dL/dyu_p·∂φ_b/∂u + dL/dyv_p·∂φ_b/∂v]
-       ↓ boltAdamStep() → GPU: adamUpdateBolt
-h -= lr · m̂/(√v̂ + ε)
+螺栓高度 h[35] → TPS 叠加 + 重力插值 → 曲面 yGrid/nGrid (32×32)
+    → 接收器像素光线 (157×50) → 2 层玻璃折射 + Buie 太阳模型
+    → 能流分布 → CPU S95 阈值 → sigmoid 损失
+    → Slang bwd_diff 反传 → 螺栓梯度 → Adam 更新
 ```
 
-**梯度链**（链式法则沿数据流反向传播）：
-
-$$\frac{\partial L}{\partial h_b} = \sum_{\text{sun}} \sum_{p} \left[ \frac{\partial L}{\partial\text{flux}} \cdot \left( \frac{\partial\text{flux}}{\partial y} \cdot \phi_b(p) + \frac{\partial\text{flux}}{\partial y_u} \cdot \frac{\partial\phi_b}{\partial u}(p) + \frac{\partial\text{flux}}{\partial y_v} \cdot \frac{\partial\phi_b}{\partial v}(p) \right) \right]$$
+梯度通过 Slang 自动微分精确计算，重放完整光路（包括双折射和太阳形状）。
 
 ### 损失函数
 
-| 损失 | 状态 | 公式 |
-|------|:---:|------|
-| **S95 sigmoid** | ✅ 默认 | $L = \sum_p \sigma\bigl(6 \cdot (f_p / \text{level} - 1)\bigr)$, $dL/df = 6s(1-s)/\text{level}$ |
-| **MSE (理想椭圆)** | 可选 | $L = \frac{1}{N}\sum_p (f_p - f_p^{\text{ideal}})^2$ |
-
-### S95 计算
-
-- **阈值**：`computeS95Level()` — CPU 二分搜索找到 95% 能量对应的能流阈值
-- **面积**：`S95 = N_{f≥level} × pixelArea`, `pixelArea = 2πRH / totalPixels`（圆柱 R=10m, H=20m）
-- **为什么用 CPU**：GPU 256-bin 直方图 (~3.1 W/m²/bin) 产生 ~1.5 W/m² 系统偏差，导致 sigmoid 损失过早饱和。CPU 二分搜索使用精确浮点值
-
-### 关键源文件
-
-| 步骤 | C++ 函数 | GPU Shader | 文件 |
-|------|----------|------------|------|
-| 曲面计算 | `boltForwardSurfaceCmd()` | `computeBoltSurface` | `bolt_forward.slang` |
-| 光线追踪 | `forwardRenderCmd()` | `renderForward` | `forward.slang` |
-| S95 阈值 | `computeS95Level()` | — (CPU) | `pipeline.cpp` |
-| S95 损失梯度 | `computeS95LossCmd()` | `computeS95Loss` | `loss.slang` |
-| 光学反传 | `boltBackwardPassCmd()` | `renderBackwardBolt` | `bolt_backward.slang` |
-| 定点数归约 | — | `reduceSurfaceGradients` | `bolt_backward.slang` |
-| 螺栓投影 | — | `projectBoltGradients` | `bolt_backward.slang` |
-| Adam 更新 | `boltAdamStep()` | `adamUpdateBolt` | `bolt_optimizer.slang` |
-| 影响函数求值 | — | `boltSurfaceAtGrid` | `bolt_common.slang` |
-| 重力插值 | — | `sampleGravityUY` | `bolt_common.slang` |
+S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / \text{S95}_{\text{level}} - 1)\big)$，其中 S95 阈值为包含 95% 总能量的最低能流水平（CPU 端二分搜索计算）。
 
 ---
 
-## 优化结果
+## 实验结果
 
-### North 300m
+### 四面镜 300m（200 iter, lr=4e-4 constant, 零初始化）
 
-| 配置 | 初始 S95 | 最优 S95 | 改善 | 螺栓行程 | 耗时 | 显存 |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|
-| TPS 零初始化, 32×32, 300 iter | 227.36 m² | **52.35 m²** | 77.0% | 33.00 mm | 532s (8.9 min) | ~720 MB |
+**日期**：2026-07-16 | **总耗时**：~20 min (1213s)
 
-> S95=52.35 m² 是当前 TPS+Vulkan 渲染器在此定日镜配置下的物理正确结果。与其他渲染器（Taichi、MCRT）的 S95 数值不可直接比较——S95 算法对渲染噪声、接收器离散化、太阳模型实现的差异敏感。
+| 镜面 | 位置 | 初始 S95 | 最优 S95 | 改善 | 最大行程 | 收敛@iter |
+|:---:|---|:---:|:---:|:---:|:---:|:---:|
+| North | (0,0,−300) | 227.4 | **51.74** | 77.2% | 35.4 mm | ~70 |
+| East | (300,0,0) | 214.4 | **66.61** | 68.9% | 35.6 mm | ~80 |
+| South | (0,0,300) | 198.3 | **74.46** | 62.4% | 34.1 mm | ~50 |
+| West | (−300,0,0) | 215.0 | **66.21** | 69.2% | 36.0 mm | ~90 |
+
+**四面合计 S95：259.0 m²**
+
+#### 收敛里程碑
+
+| Iter | North | East | South | West |
+|:---:|:---:|:---:|:---:|:---:|
+| 0 | 227.4 | 214.4 | 198.3 | 215.0 |
+| 30 | 80.7 | 87.8 | 88.0 | 87.2 |
+| 50 | 59.8 | 70.8 | 75.7 | 70.9 |
+| 70 | 52.2 | 66.9 | 74.5 | 66.6 |
+| 100 | 51.9 | 66.7 | 74.5 | 66.3 |
+| 150 | 51.8 | 66.6 | 74.5 | 66.2 |
+| 200 | **51.7** | **66.6** | **74.5** | **66.2** |
+
+> E/S/W 在 iter 50–80 已基本收敛，后续改善 <0.3 m²。若接受微小损失，可将 E/S/W 迭代缩至 100 iter，节省 50% 时间。
+
+### 与旧方案对比（lr=2e-4→1e-7 线性衰减, 300 iter）
+
+| 镜面 | 旧 S95 | 新 S95 | 改善 |
+|------|:---:|:---:|:---:|
+| North | 52.30 | **51.74** | +1.1% |
+| East | 67.47 | **66.61** | +1.3% |
+| South | 78.02 | **74.46** | +4.5% |
+| West | 87.02 | **66.21** | **+23.9%** |
+
+**关键发现**：West 改善最大 (+23.9%)——旧的衰减 lr 将其困在极差的局部极小值。恒定高 lr (4e-4) 配合 Adam 自身的 adaptivity 在所有方向上均优于线性衰减。
 
 ---
 
-## 物理代理模型
+## 后续工作进展
 
-### 核心公式（板局部坐标系）
+### ✅ 方向 1：理想椭圆面 vs. TPS 拟合面的形变/光斑验证
 
-$$w(\mathbf{r}) = UY_{\text{grav}}^{\text{FEA}}(\theta) + \sum_{b=1}^{N_b} h_b \cdot \phi_b^{\text{TPS}}(\mathbf{r})$$
+**状态**：已完成（2026-07-16），详细报告见 `results_4mirror_200iter/EXPERIMENT_REPORT.md`。
 
-模型定义在板平面局部坐标系下。重力项 $UY_{\text{grav}}^{\text{FEA}}(\theta)$ 由对应角度 FEA 结果插值而得。$\phi_b$ 描述单位螺栓位移在此坐标系下的响应，$dy/dh = \phi$ 链式法则直接成立。
+**核心发现**：
 
-### TPS 影响函数
+**1. TPS 表示能力充分且一致**
 
-通过 `scripts/generate_tps_influence.py` 离线预计算（< 1s），求解 TPS 系统：
+四面镜的 LS−Ell RMS 均为精确的 **0.50 mm**，shape_corr 均 ≥ 0.9987。TPS 基函数对二次型椭圆面的表示能力不受镜面方位影响——模型误差仅为 ±0.5 mm RMS。
 
-$$A \cdot [c; d] = [\mathbf{e}_b; \mathbf{0}_3], \quad A = \begin{bmatrix} K & P \\ P^T & 0 \end{bmatrix}$$
+| 镜面 | LS−Ell RMS (mm) | Opt−Ell RMS (mm) | corr(LS, Ell) | corr(Opt, Ell) |
+|------|:---:|:---:|:---:|:---:|
+| North | 0.50 | 0.86 | 0.9989 | 0.9973 |
+| East | 0.50 | 0.68 | 0.9989 | 0.9980 |
+| South | 0.50 | 0.69 | 0.9987 | 0.9978 |
+| West | 0.50 | 0.73 | 0.9988 | 0.9983 |
 
-其中 $K_{ij} = r_{ij}^2 \log(r_{ij}^2)$（无限大板点载荷 Green 函数），$P = [\mathbf{1}, BX, BZ]$，Tikhonov 正则 λ = 1e⁻⁶。
+**2. 优化器主动偏离椭圆面型**
 
-**关键性质（32×32 实测）**：
-- **单位分解**：$\sum_b \phi_b(x,z) \equiv 1$，保证物理正确的线性叠加
-- **自影响**：均值 1.007，范围 [0.93, 1.12]
-- **系统规模**：38×38（35 螺栓 + 3 多项式），条件数 ~4.2×10⁶
+Opt−Ell RMS (0.68–0.86 mm) 始终大于 LS−Ell RMS (0.50 mm)。优化器为降低 S95 放弃最佳面型拟合，优先光学性能。North 偏离最大（0.86 mm）——正对接收器的几何关系对法向误差更敏感。
 
-### 重力模型（FEA-Direct + 角度插值）
+**3. 椭圆拟合面型 S95 vs 优化面型 S95**
 
-20 个角度 FEA 解（NLGEOM-ON，10°/14°/18°/.../78°/80°），shader 侧双线性插值。重力分量直接取自对应角度零螺栓 FEA 解的局部坐标系 UY 值。
+| 镜面 | LS-fit S95 (m²) | Optimized S95 (m²) | Δ | Opt 优势 |
+|------|:---:|:---:|:---:|:---:|
+| North | 52.28 | **51.74** | +0.54 | 1.0% |
+| East | 66.83 | **66.61** | +0.22 | 0.3% |
+| South | 74.60 | **74.46** | +0.14 | 0.2% |
+| West | 66.67 | **66.21** | +0.47 | 0.7% |
 
----
+优化面型的 S95 **始终优于**椭圆拟合面型（Δ = 0.14–0.54 m²），验证了梯度优化的有效性。
 
-## 性能优化历程
+### 🔄 方向 2：ANSYS FEA 验证（螺栓位移 → 变形点云）
 
-| 阶段 | 名称 | 状态 | 每迭代 | 显存节省 | 说明 |
-|:---:|------|:---:|:---:|:---:|------|
-| — | 基线 | — | 3.9s | — | Sobol 1.5GB + gradPartial 386MB |
-| **1** | 内联 Box-Muller | ✅ | — | −1,500 MB | Wang hash + Box-Muller 替代 Sobol 池 |
-| **2** | Command Buffer 合批 | ✅ | — | — | RawComputePass, 消除 per-dispatch fence |
-| **3** | GPU S95 | ❌ 跳过 | — | — | GPU 直方图偏差导致 Loss 饱和 (见下方) |
-| **4** | 多太阳 Push Constants | ❌ 跳过 | — | — | 性能退步, 未来可重新评估 |
-| **5** | gradPartial 归约 | ✅ | **1.8s** | −386 MB | InterlockedAdd 定点数, 12KB gradPartialTile |
+**状态**：管线就绪，待讨论。`scripts/run_fea_validation.py` 已实现端到端 FEA 验证流程。
 
-### GPU S95 回归 (Phase 3) — 教训
+### 🔄 方向 3：程序性能分析与 Shader 优化
 
-Phase 3 引入的 GPU 端 S95 直方图 (`computeS95LevelGPU`) 使用 256-bin 固定范围，产生 ~1.5 W/m² 的系统偏差。S95 sigmoid 损失函数对 level 参数极其敏感——1.5 W/m² 的偏差导致 Loss 在 iter 20-40 过早归零，优化器失去梯度信号，S95 止步于 ~115 m²。**修复**：保留 CPU 端 S95 计算路径，`readFlux` 每 sun 仅增加 ~0.5ms 开销。
+**状态**：P0-P2 shader 优化已在 `worktree-perf-optimization` 分支完成，包括：
+- P0：消除 CAS 原子竞争（gradPartial 私槽 + reduce kernel）
+- P1a：热路径 InterlockedAdd → groupshared + WaveActiveSum
+- P1b：并行化 S95FindLevel（wave-level reduction）
+- P2：合并 20 个 gravity binding 为单 buffer 直接索引
 
-### Phase 5 技术要点
-
-Slang 的 `InterlockedCompareExchange` (CAS) 在包含 `bwd_diff` auto-diff 的 shader 中生成不执行的 SPIR-V（编译器 bug），但 `InterlockedAdd` 正常工作。通过定点数方案绕过：
-- 梯度 × 1e4 → `int` → `uint` (二进制补码)，`InterlockedAdd` 原子累加到 12 KB `gradPartialTile`
-- `reduceSurfaceGradients` 读取 `int` 恢复符号，÷1e4 转回 `float`
+待重新编译并验证端到端性能数据。
 
 ---
 
 ## 项目结构
 
 ```
-diff_helio/
 ├── src/                           C++ Vulkan 管线
 │   ├── pipeline.cpp/h            优化循环、S95、梯度反传、Adam
 │   ├── main.cpp                  入口 (--dump-flux, --check-grad)
 │   ├── config.cpp/h              JSON 配置解析
 │   ├── input.cpp/h               太阳方向/定日镜配置加载
 │   └── vulkan_app.cpp/h          Vulkan 封装
-├── shaders/                       Slang GPU 计算着色器 (.slang)
+├── shaders/                       Slang GPU 计算着色器
 │   ├── bolt_forward.slang        力学正向：曲面计算
-│   ├── bolt_backward.slang       光学反向传播 (InterlockedAdd 归约)
-│   ├── bolt_common.slang         影响函数与重力求值
+│   ├── bolt_backward.slang       三阶段反向：bwd_diff → reduce → project
+│   ├── bolt_common.slang         影响函数求值 + 重力插值
 │   ├── bolt_optimizer.slang      螺栓 Adam 优化器
-│   ├── forward.slang             光学正向：光线追踪
-│   ├── backward.slang             Bézier 模式光学反传
-│   ├── loss.slang                 S95 sigmoid 损失 (梯度 + 计数)
-│   ├── loss_gpu.slang             GPU 侧损失归约 (仅显示用)
-│   ├── s95_histogram.slang        GPU S95 直方图 (未使用, 有偏差)
-│   ├── optimizer.slang            Bézier 模式 Adam
-│   ├── common.slang               共享 UBO、坐标变换、Box-Muller
-│   ├── sunshape.slang             可微太阳形状 (Buie/Pillbox/Gaussian)
-│   └── wos_*.slang                WoS 离线影响函数计算
+│   ├── forward.slang             光线追踪 + 双折射 + Buie 太阳
+│   ├── backward.slang            Bézier 模式反向
+│   ├── loss.slang                 S95 sigmoid 损失
+│   ├── common.slang               共享 UBO、坐标变换、Wang hash
+│   └── sunshape.slang             可微太阳形状 (Buie/Pillbox/Gaussian)
 ├── scripts/
-│   ├── generate_tps_influence.py  TPS 影响函数 .bin 生成
-│   └── ansys_gravity.py           ANSYS MAPDL 批量重力仿真
+│   ├── generate_proxy_model.py   统一数据生成（TPS + 重力）
+│   ├── run_fea_validation.py     ANSYS FEA 验证
+│   ├── validate_ellipse_vs_optimized.py  椭圆 vs 优化面对比
+│   └── verify_ellipse_bolt_inversion.py  椭圆螺栓反推
+├── configs/                       JSON 配置文件
+│   └── bolt_layouts/              螺栓布局定义 (7×5, 6×6)
 ├── data/                          太阳方向、椭圆参数
-├── data_vsm_mnvn_tik32/           预生成 TPS 数据 (32×32)
-│   ├── influence_phi.bin          φ_b 位移 [35×32×32]
-│   ├── influence_phi_u/v.bin      一阶导数
-│   └── gravity_{10..80}deg.bin    20 角度 FEA 重力 UY
-├── configs/                       JSON 优化配置文件
-│   ├── bolt_vsm_mnvn_300iter.json 主配置 (300 iter, lr=2e-4)
-│   ├── bolt_layouts/              螺栓布局 (7×5, 6×6)
-│   └── bolt_4mirror_swe.json     四面镜配置
-├── optimization_plan.md           分阶段优化方案与修复文档
-├── CLAUDE.md                      详细方法论与参数速查
-└── README.md                      本文件
+├── data_proxy/                    预生成 TPS 数据 + 20-bin 重力
+├── results_4mirror_200iter/      四面镜 200-iter 优化结果
+├── docs/                          补充文档（TVCG 差距分析等）
+└── analysis/                      历史分析文档
 ```
 
 ---
 
-## 物理参数速查
+## 参数速查
 
 | 参数 | 值 |
 |------|-----|
 | 镜面尺寸 | 12.84 × 9.45 m × 4 mm |
-| 螺栓数 | 35 (7×5), 边距 8% |
+| 螺栓数 / 布局 | 35 (7×5), 边距 8% |
 | 渲染网格 | 32×32 |
 | 接收器 | 圆柱 R=10m H=20m, 157×50 px |
 | 板弯曲刚度 D | 392 N·m |
@@ -237,54 +235,16 @@ diff_helio/
 | 玻璃折射率 | 1.523, 厚 3mm |
 | 太阳模型 | Buie CSR=0.01, DNI=1000 W/m² |
 | 斜率误差 | 1 mrad |
-| 学习率 (零初始) | 2×10⁻⁴ → 1×10⁻⁷ (线性衰减) |
+| 学习率（推荐） | 4×10⁻⁴ constant |
 | Adam β₁, β₂, ε | 0.9, 0.999, 10⁻⁸ |
 
-### 螺栓坐标
-
-7×5 网格，边距 8%：
-- BU = [0.08, 0.22, 0.36, 0.50, 0.64, 0.78, 0.92]（7 列）
-- BV = [0.08, 0.29, 0.50, 0.71, 0.92]（5 行）
-- BX = (u−0.5)×W, BZ = (v−0.5)×L
-
-### 后处理约定
-
-```
-h_pipe_final = h_opt - max(h_opt) - 0.5mm    (管线约定, 全部 ≤ −0.5mm)
-h_phys       = -h_pipe_final                   (物理约定, 全部 ≥ +0.5mm)
-h_stroke     = h_phys - min(h_phys)            (实际螺栓伸出量, 最短 = 0)
-```
-
 ---
 
-## 性能参考 (RTX 4070 SUPER, 32×32, 20-bin)
+## 文档索引
 
-| 指标 | 数值 |
+| 文件 | 内容 |
 |------|------|
-| 像素 / 每像素 SPP | 7,850 / 1,024 (32²) |
-| 每 iter 光线 (fwd+bwd, 36 sun) | ~0.58 B |
-| 300 iter 总光线 | ~174 B |
-| 每 iter 平均 | **1.8s** |
-| 总耗时 (300 iter) | **532s (~9 min)** |
-| GPU 显存占用 | ~720 MB |
-
-**瓶颈分布**：forwardRender ~55%, boltBackward ~35%, boltForwardSurface <5%, 其他 ~5%
-
----
-
-## 后续方向
-
-| 优先级 | 方向 | 说明 |
-|:---:|------|------|
-| P0 | 椭圆初始化替代零初始化 | 降低初始 S95，加速收敛 |
-| P0 | GPU S95 精度修复 | 增加直方图 bin 数 (256→2048) 或改用自适应范围，消除 CPU readFlux |
-| P1 | 多 sun 批量并行 | 36 sun 打包单次 dispatch，预期 2–3× 加速 |
-| P1 | 螺栓驱动 NLGEOM 修正 | 消除线性代理模型剩余 ~1.3mm 面型误差 |
-| P2 | 四面镜 (E/S/W) 优化 | 验证多位置泛化能力 |
-| P2 | C++ shader 直接 TPS | 替代 .bin 预计算，支持任意分辨率 |
-
----
-
-## 引用
-
-核心方法论见 [CLAUDE.md](CLAUDE.md)，包含完整的数据流推导、NLGEOM 分析和物理模型细节。性能优化方案与 Phase 3 GPU S95 回归分析见 [optimization_plan.md](optimization_plan.md)。
+| `CLAUDE.md` | 开发者参考：编译、架构、方法论、参数速查 |
+| `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验完整报告 |
+| `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `analysis/` | 历史分析文档 |
