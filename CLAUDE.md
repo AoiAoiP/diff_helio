@@ -137,9 +137,16 @@ $$\frac{\partial \phi_b}{\partial u} = \frac{\partial \phi_b}{\partial x} \cdot 
 
 与 `bolt_common.slang` 切向量约定 `tu=(W, yu, 0)`、`tv=(0, yv, L)` 一致。
 
-#### 2.2 自影响修正
+#### 2.2 自影响修正与网格约定
 
-TPS 系统矩阵对角为 $K_{ii} = \phi(0) + \lambda$，但逐点评估核函数 $\phi(0) = r^2\log(r^2)|_{r\to 0} \approx 0$，丢失了 $\lambda$ 项，导致螺栓自位置影响被系统性压低至 ~0.53。修复方式：在每个螺栓最近网格点补回 `phi_kernel[j, self] += λ`，并统一核函数为 $r^2\log(r^2)$（此前误用 $r^2\log(r)$，因子差 2）。修复后自影响均值 **1.007**，范围 [0.93, 1.12]。
+TPS 系统矩阵对角为 $K_{ii} = \phi(0) + \lambda$，但逐点评估核函数 $\phi(0) = r^2\log(r^2)|_{r\to 0} \approx 0$，丢失了 $\lambda$ 项，导致螺栓自位置影响被系统性压低至 ~0.53。修复方式：在每个螺栓最近网格点补回 `phi_kernel[j, self] += λ`，并统一核函数为 $r^2\log(r^2)$（此前误用 $r^2\log(r)$，因子差 2）。
+
+**网格约定**（2026-07-17 修正）：influence 和 gravity 数据现在使用 **pixel-centered** 网格，与 shader 的 `gridToPlate()` 一致：
+```python
+u = (np.arange(GS) + 0.5) / GS        # pixel center
+x = (u - 0.5) * W                      # 匹配 shader: gridToPlate(gridU, gridV)
+```
+此前使用 `linspace(-W/2, W/2, GS)`（cell-edged），与 shader 偏移 ~200mm。修正后自影响从 [0.93, 1.12] 改善到 **[0.94, 1.02]**（均值 0.98）。
 
 #### 2.3 关键性质（32×32 实测）
 
@@ -161,10 +168,16 @@ TPS 系统矩阵对角为 $K_{ii} = \phi(0) + \lambda$，但逐点评估核函�
 将重力 bin 从 5 个加密到 **20 个**（10°/14°/18°/22°/26°/30°/34°/38°/42°/46°/50°/54°/58°/62°/66°/70°/73°/76°/78°/80°），间距 ≤4° 使得线性插值残余可忽略。
 
 生成方式：
-- **从已有 FEA CSV**：`precompute_gravity_bins.py --angles 10 14 18 ... 80`
-- **从 ANSYS MAPDL 批量仿真**：`scripts/generate_proxy_model.py gravity-ansys` 自动对每个角度运行一次 NLGEOM-ON 静力学仿真
+- **从 ANSYS MAPDL 批量仿真**：`python scripts/ansys_gravity.py` 自动对每个角度运行 NLGEOM-ON 静力学仿真，输出 7 列 CSV
+- **CSV → .bin 转换**：`python scripts/generate_proxy_model.py gravity` 从 CSV 中提取 plate-normal 位移 `w = uy·cosθ + uz·sinθ`（匹配 GUI 约定：板法向 = (0, cosθ, +sinθ)），插值到 pixel-centered 32×32 网格
 
-管线集成：shader 侧 `kGravityAngles[20]` + 合并单 buffer 直接索引，C++ 侧 `m_gravityBinsMerged` + 自动角度查找表。
+**坐标系约定**（2026-07-17 修正）：所有 APDL 脚本统一使用 GUI 约定：
+- 板角点：`y = −z_local·sinθ`（顶部边缘在原点下方）
+- 板法向：`(0, cosθ, +sinθ)`（全局坐标）
+- 螺栓位移：`(UX=0, UY=stroke·cosθ, UZ=stroke·+sinθ)`
+- 重力提取：`w = uy·cosθ + uz·sinθ`（板法向分量，非 raw global UY）
+
+管线集成：shader 侧 `kGravityAngles[20]` + 合并单 buffer 直接索引，C++ 侧 `m_gravityBinsMerged`。
 
 #### 3.3 效果
 
@@ -214,10 +227,33 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 
 ## 实验日志
 
-详细方法论、实验结果、性能分析记录在以下文件中：
-
 | 文件 | 内容 |
 |------|------|
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验报告（2026-07-16） |
+| `validation/fea_comparison/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（2026-07-17） |
+| `validation/fea_comparison/62deg_comparison.png` | 62° GUI vs Python 重力对比图 |
 | `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
-| `analysis/` | 历史分析文档（性能优化计划、梯度分解等） |
+| `analysis/` | 历史分析文档 |
+
+### 最新四面镜结果（2026-07-17, data_proxy 修正后）
+
+| 镜面 | 初始 S95 | 最优 S95 | 改善 | Max Stroke |
+|:---:|:---:|:---:|:---:|:---:|
+| North | 227.3 | **50.05** | 78.0% | 36.0 mm |
+| East | 214.4 | **65.11** | 69.6% | 35.9 mm |
+| South | 198.3 | **73.13** | 63.1% | 34.6 mm |
+| West | 215.0 | **64.67** | 69.9% | 36.7 mm |
+| **合计** | | **253.0** | | |
+
+> 配置：200 iter, lr=4e-4 constant, Adam β=(0.9,0.999), pixel-centered 32×32 网格, 20-bin plate-normal 重力, GUI-apdl 约定。
+
+### TPS Proxy vs FEA 验证（2026-07-17）
+
+| 角度 | NLGEOM | RMS | R2 | shape_corr |
+|:---:|:---:|:---:|:---:|:---:|
+| 29.5° | ON | 1.94 mm | 0.955 | 0.980 |
+| 29.5° | OFF | 2.45 mm | 0.929 | 0.968 |
+| 58.5° | ON | 2.04 mm | 0.952 | 0.980 |
+| 58.5° | OFF | 2.22 mm | 0.942 | 0.976 |
+
+> NLGEOM-ON 在所有指标上优于 OFF——proxy 使用 NLGEOM-ON 重力 bins，天然匹配 FEA-ON 解。

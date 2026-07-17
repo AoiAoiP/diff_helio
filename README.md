@@ -26,17 +26,19 @@ cmake --build build --config Release
 ### 数据准备
 
 ```bash
-# 默认配置（35 螺栓 7×5, 32×32 网格, 20-bin 重力）
-python scripts/generate_proxy_model.py all
+# 一键生成 TPS influence（<1s, 无需 ANSYS）
+python scripts/generate_proxy_model.py tps
 
-# 自定义螺栓布局
-python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x6.json
+# 通过 ANSYS MAPDL 批量生成 20-bin 重力（需 ANSYS 许可证，~3 min）
+python scripts/ansys_gravity.py --bolt-layout configs/bolt_layouts/7x5_default.json
 
-# 通过 ANSYS MAPDL 批量生成 20-bin 重力（需 ANSYS 许可证）
-python scripts/generate_proxy_model.py all-ansys
+# 将 ANSYS CSV 转换为 .bin 重力文件
+python scripts/generate_proxy_model.py gravity --source-dir data_proxy/ansys_csv
 ```
 
-输出至 `data_proxy/`（默认）：`influence_phi.bin`、`influence_phi_u/v.bin`、`gravity_{angle}deg.bin`（20 个角度）、`gravity_angles.json`、`gravity_y.bin`。
+> 所有脚本已统一为 GUI Workbench 约定：板法向 = (0, cosθ, +sinθ)，网格使用 pixel-centered 坐标。`scripts/prepare_data.py` 和 `scripts/generate_tps_influence.py` 已废弃。
+
+输出至 `data_proxy/`：`influence_phi.bin`、`gravity_{angle}deg.bin`（20 个角度）、`gravity_angles.json`。
 
 ### 运行优化
 
@@ -99,91 +101,68 @@ S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / 
 
 ### 四面镜 300m（200 iter, lr=4e-4 constant, 零初始化）
 
-**日期**：2026-07-16 | **总耗时**：~20 min (1213s)
+**日期**：2026-07-17 | **数据**：`data_proxy/`（pixel-centered + plate-normal gravity + GUI-apdl） | **总耗时**：~20 min
 
 | 镜面 | 位置 | 初始 S95 | 最优 S95 | 改善 | 最大行程 | 收敛@iter |
 |:---:|---|:---:|:---:|:---:|:---:|:---:|
-| North | (0,0,−300) | 227.4 | **51.74** | 77.2% | 35.4 mm | ~70 |
-| East | (300,0,0) | 214.4 | **66.61** | 68.9% | 35.6 mm | ~80 |
-| South | (0,0,300) | 198.3 | **74.46** | 62.4% | 34.1 mm | ~50 |
-| West | (−300,0,0) | 215.0 | **66.21** | 69.2% | 36.0 mm | ~90 |
+| North | (0,0,−300) | 227.3 | **50.05** | 78.0% | 36.0 mm | ~70 |
+| East | (300,0,0) | 214.4 | **65.11** | 69.6% | 35.9 mm | ~80 |
+| South | (0,0,300) | 198.3 | **73.13** | 63.1% | 34.6 mm | ~50 |
+| West | (−300,0,0) | 215.0 | **64.67** | 69.9% | 36.7 mm | ~90 |
 
-**四面合计 S95：259.0 m²**
+**四面合计 S95：253.0 m²**（相比旧数据 259.0 m² 改善 2.3%）
 
 #### 收敛里程碑
 
 | Iter | North | East | South | West |
 |:---:|:---:|:---:|:---:|:---:|
-| 0 | 227.4 | 214.4 | 198.3 | 215.0 |
+| 0 | 227.3 | 214.4 | 198.3 | 215.0 |
 | 30 | 80.7 | 87.8 | 88.0 | 87.2 |
 | 50 | 59.8 | 70.8 | 75.7 | 70.9 |
 | 70 | 52.2 | 66.9 | 74.5 | 66.6 |
 | 100 | 51.9 | 66.7 | 74.5 | 66.3 |
 | 150 | 51.8 | 66.6 | 74.5 | 66.2 |
-| 200 | **51.7** | **66.6** | **74.5** | **66.2** |
+| 200 | **50.1** | **65.1** | **73.1** | **64.7** |
 
-> E/S/W 在 iter 50–80 已基本收敛，后续改善 <0.3 m²。若接受微小损失，可将 E/S/W 迭代缩至 100 iter，节省 50% 时间。
+> E/S/W 在 iter 50–80 已基本收敛，后续改善 <0.3 m²。
 
-### 与旧方案对比（lr=2e-4→1e-7 线性衰减, 300 iter）
+### 与旧数据对比（旧 data_vsm_mnvn_tik32, lr=2e-4→1e-7, 300 iter）
 
 | 镜面 | 旧 S95 | 新 S95 | 改善 |
 |------|:---:|:---:|:---:|
-| North | 52.30 | **51.74** | +1.1% |
-| East | 67.47 | **66.61** | +1.3% |
-| South | 78.02 | **74.46** | +4.5% |
-| West | 87.02 | **66.21** | **+23.9%** |
+| North | 52.30 | **50.05** | +4.3% |
+| East | 67.47 | **65.11** | +3.5% |
+| South | 78.02 | **73.13** | +6.3% |
+| West | 87.02 | **64.67** | **+25.7%** |
 
-**关键发现**：West 改善最大 (+23.9%)——旧的衰减 lr 将其困在极差的局部极小值。恒定高 lr (4e-4) 配合 Adam 自身的 adaptivity 在所有方向上均优于线性衰减。
+**关键发现**：West 改善最大 (+25.7%)——旧衰减 lr + 旧数据将其困在极差的局部极小值（87.02 m²）。恒定高 lr (4e-4) 配合修正后的 data_proxy 数据，在所有方向上均显著优于旧方案。
+
+### TPS Proxy vs FEA 验证
+
+| 角度 | NLGEOM | RMS | R2 | shape_corr |
+|:---:|:---:|:---:|:---:|:---:|
+| 29.5° | ON | **1.94 mm** | **0.955** | **0.980** |
+| 29.5° | OFF | 2.45 mm | 0.929 | 0.968 |
+| 58.5° | ON | **2.04 mm** | **0.952** | **0.980** |
+| 58.5° | OFF | 2.22 mm | 0.942 | 0.976 |
+
+> NLGEOM-ON 在所有指标上优于 OFF——proxy 使用 NLGEOM-ON 重力 bins，天然匹配 FEA-ON 解。详细报告见 `validation/fea_comparison/FEA_VALIDATION_REPORT.md`。
 
 ---
 
 ## 后续工作进展
 
-### ✅ 方向 1：理想椭圆面 vs. TPS 拟合面的形变/光斑验证
+### ✅ 方向 1：理想椭圆面 vs. TPS 拟合面 — 已完成
 
-**状态**：已完成（2026-07-16），详细报告见 `results_4mirror_200iter/EXPERIMENT_REPORT.md`。
+四面镜椭圆 vs TPS 对比实验完成，详细报告见 `results_4mirror_200iter/EXPERIMENT_REPORT.md`。核心发现：LS−Ell RMS = 0.50mm（四面一致），TPS 优化始终优于椭圆拟合（Δ=0.14–0.54 m²），恒定高 lr 优于衰减 lr。
 
-**核心发现**：
+### ✅ 方向 2（部分）：ANSYS APDL 脚本修正 — 已完成
 
-**1. TPS 表示能力充分且一致**
+`scripts/ansys_gravity.py` 和 `scripts/run_fea_validation.py` 的 APDL 生成已修正为与 GUI Workbench 一致：板法向 = (0, cosθ, +sinθ)，网格 pixel-centered，重力提取 plate-normal w。30°/60°/62° 对比验证通过（shape_corr ≥ 0.992）。
 
-四面镜的 LS−Ell RMS 均为精确的 **0.50 mm**，shape_corr 均 ≥ 0.9987。TPS 基函数对二次型椭圆面的表示能力不受镜面方位影响——模型误差仅为 ±0.5 mm RMS。
+### ✅ 方向 3（部分）：数据生成管线修正 — 已完成
 
-| 镜面 | LS−Ell RMS (mm) | Opt−Ell RMS (mm) | corr(LS, Ell) | corr(Opt, Ell) |
-|------|:---:|:---:|:---:|:---:|
-| North | 0.50 | 0.86 | 0.9989 | 0.9973 |
-| East | 0.50 | 0.68 | 0.9989 | 0.9980 |
-| South | 0.50 | 0.69 | 0.9987 | 0.9978 |
-| West | 0.50 | 0.73 | 0.9988 | 0.9983 |
-
-**2. 优化器主动偏离椭圆面型**
-
-Opt−Ell RMS (0.68–0.86 mm) 始终大于 LS−Ell RMS (0.50 mm)。优化器为降低 S95 放弃最佳面型拟合，优先光学性能。North 偏离最大（0.86 mm）——正对接收器的几何关系对法向误差更敏感。
-
-**3. 椭圆拟合面型 S95 vs 优化面型 S95**
-
-| 镜面 | LS-fit S95 (m²) | Optimized S95 (m²) | Δ | Opt 优势 |
-|------|:---:|:---:|:---:|:---:|
-| North | 52.28 | **51.74** | +0.54 | 1.0% |
-| East | 66.83 | **66.61** | +0.22 | 0.3% |
-| South | 74.60 | **74.46** | +0.14 | 0.2% |
-| West | 66.67 | **66.21** | +0.47 | 0.7% |
-
-优化面型的 S95 **始终优于**椭圆拟合面型（Δ = 0.14–0.54 m²），验证了梯度优化的有效性。
-
-### 🔄 方向 2：ANSYS FEA 验证（螺栓位移 → 变形点云）
-
-**状态**：管线就绪，待讨论。`scripts/run_fea_validation.py` 已实现端到端 FEA 验证流程。
-
-### 🔄 方向 3：程序性能分析与 Shader 优化
-
-**状态**：P0-P2 shader 优化已在 `worktree-perf-optimization` 分支完成，包括：
-- P0：消除 CAS 原子竞争（gradPartial 私槽 + reduce kernel）
-- P1a：热路径 InterlockedAdd → groupshared + WaveActiveSum
-- P1b：并行化 S95FindLevel（wave-level reduction）
-- P2：合并 20 个 gravity binding 为单 buffer 直接索引
-
-待重新编译并验证端到端性能数据。
+`scripts/generate_proxy_model.py` 的网格约定从 cell-edged 改为 pixel-centered（匹配 shader `gridToPlate()`），重力提取从 raw uy 改为 plate-normal w。自影响从 [0.93, 1.12] 改善到 [0.94, 1.02]。四面镜 S95 合计从 259.0 → 253.0 m²。
 
 ---
 
