@@ -120,7 +120,7 @@ Config loadConfig(const std::string &path) {
     cfg.numBoltsX = extractInt(json, "num_bolts_x", 7);
     cfg.numBoltsZ = extractInt(json, "num_bolts_z", 5);
     cfg.boltMargin = extractFloat(json, "bolt_margin", 0.08f);
-    cfg.influenceDataPath = extractString(json, "influence_data_path", "data");
+    cfg.influenceDataPath = extractString(json, "influence_data_path", "data_proxy");
 
     cfg.useBSpline = extractInt(json, "use_bspline", 0) != 0;
     cfg.numCpX = extractInt(json, "num_cp_x", 5);

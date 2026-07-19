@@ -85,7 +85,7 @@ $$w(\mathbf{r}) = UY_{\text{grav}}^{\text{FEA}}(\theta) + \sum_{b=1}^{35} h_b \c
 ```
 螺栓高度 h[35] → TPS 叠加 + 重力插值 → 曲面 yGrid/nGrid (32×32)
     → 接收器像素光线 (157×50) → 2 层玻璃折射 + Buie 太阳模型
-    → 能流分布 → CPU S95 阈值 → sigmoid 损失
+    → 能流分布 → GPU 协作二分查找 S95 阈值 → sigmoid 损失
     → Slang bwd_diff 反传 → 螺栓梯度 → Adam 更新
 ```
 
@@ -93,7 +93,7 @@ $$w(\mathbf{r}) = UY_{\text{grav}}^{\text{FEA}}(\theta) + \sum_{b=1}^{35} h_b \c
 
 ### 损失函数
 
-S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / \text{S95}_{\text{level}} - 1)\big)$，其中 S95 阈值为包含 95% 总能量的最低能流水平（CPU 端二分搜索计算）。
+S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / \text{S95}_{\text{level}} - 1)\big)$，其中 S95 阈值为包含 95% 总能量的最低能流水平（GPU 端协作二分搜索，与 CPU 版语义一致，阈值不出 GPU）。
 
 ---
 

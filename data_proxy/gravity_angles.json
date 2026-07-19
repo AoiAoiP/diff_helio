@@ -1,0 +1,167 @@
+{
+  "angles": {
+    "10": {
+      "cos_theta": 0.984807753012208,
+      "pv_mm": 12.102885099013141,
+      "min_mm": -12.102885099013141,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_10deg.csv"
+    },
+    "14": {
+      "cos_theta": 0.9702957262759965,
+      "pv_mm": 11.969322752484944,
+      "min_mm": -11.969322752484944,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_14deg.csv"
+    },
+    "18": {
+      "cos_theta": 0.9510565162951535,
+      "pv_mm": 11.796114546191884,
+      "min_mm": -11.796114546191884,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_18deg.csv"
+    },
+    "22": {
+      "cos_theta": 0.9271838545667874,
+      "pv_mm": 11.578543572520237,
+      "min_mm": -11.578543572520237,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_22deg.csv"
+    },
+    "26": {
+      "cos_theta": 0.898794046299167,
+      "pv_mm": 11.148469900413728,
+      "min_mm": -11.148469900413728,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_26deg.csv"
+    },
+    "30": {
+      "cos_theta": 0.8660254037844387,
+      "pv_mm": 10.837645570964412,
+      "min_mm": -10.837645570964412,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_30deg.csv"
+    },
+    "34": {
+      "cos_theta": 0.8290375725550417,
+      "pv_mm": 10.389146276405208,
+      "min_mm": -10.389146276405208,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_34deg.csv"
+    },
+    "38": {
+      "cos_theta": 0.7880107536067219,
+      "pv_mm": 9.986391032491149,
+      "min_mm": -9.986391032491149,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_38deg.csv"
+    },
+    "42": {
+      "cos_theta": 0.7431448254773942,
+      "pv_mm": 9.540040185671163,
+      "min_mm": -9.540040185671163,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_42deg.csv"
+    },
+    "46": {
+      "cos_theta": 0.6946583704589973,
+      "pv_mm": 9.049527357646225,
+      "min_mm": -9.049527357646225,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_46deg.csv"
+    },
+    "50": {
+      "cos_theta": 0.6427876096865394,
+      "pv_mm": 8.541668822210365,
+      "min_mm": -8.541668822210365,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_50deg.csv"
+    },
+    "54": {
+      "cos_theta": 0.5877852522924731,
+      "pv_mm": 7.308519014924431,
+      "min_mm": -7.308519014924431,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_54deg.csv"
+    },
+    "58": {
+      "cos_theta": 0.5299192642332049,
+      "pv_mm": 6.243306961936078,
+      "min_mm": -6.205397648472024,
+      "max_mm": 0.037909313464053906,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_58deg.csv"
+    },
+    "62": {
+      "cos_theta": 0.46947156278589086,
+      "pv_mm": 5.570933917096651,
+      "min_mm": -5.5372101306233965,
+      "max_mm": 0.03372378647325469,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_62deg.csv"
+    },
+    "66": {
+      "cos_theta": 0.4067366430758002,
+      "pv_mm": 4.166040308009907,
+      "min_mm": -4.0968470248354665,
+      "max_mm": 0.06919328317443996,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_66deg.csv"
+    },
+    "70": {
+      "cos_theta": 0.3420201433256688,
+      "pv_mm": 3.499504166327894,
+      "min_mm": -3.441095781660933,
+      "max_mm": 0.05840838466696145,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_70deg.csv"
+    },
+    "73": {
+      "cos_theta": 0.29237170472273677,
+      "pv_mm": 2.7063068929248955,
+      "min_mm": -2.7063068929248955,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_73deg.csv"
+    },
+    "76": {
+      "cos_theta": 0.24192189559966767,
+      "pv_mm": 2.239449378289242,
+      "min_mm": -2.239449378289242,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_76deg.csv"
+    },
+    "78": {
+      "cos_theta": 0.20791169081775945,
+      "pv_mm": 1.9246708971130273,
+      "min_mm": -1.9246708971130273,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_78deg.csv"
+    },
+    "80": {
+      "cos_theta": 0.17364817766693041,
+      "pv_mm": 1.6075241264289586,
+      "min_mm": -1.6075241264289586,
+      "max_mm": 0.0,
+      "nan_filled": 0,
+      "source": "L:\\Code\\bezier_opt_desktop\\data_proxy\\ansys_csv/node_dump_80deg.csv"
+    }
+  },
+  "grid_size": 32,
+  "plate_W_m": 12.84,
+  "plate_L_m": 9.45
+}

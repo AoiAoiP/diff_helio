@@ -60,6 +60,7 @@ set(SHADER_SOURCES
     ${SHADER_DIR}/bolt_forward.slang
     ${SHADER_DIR}/bolt_backward.slang
     ${SHADER_DIR}/bolt_optimizer.slang
+    ${SHADER_DIR}/s95_gpu.slang
     ${SHADER_DIR}/wos_common.slang
     ${SHADER_DIR}/wos_influence.slang
 )
@@ -84,6 +85,8 @@ set(SHADER_ENTRIES
     "projectBoltGradients:bolt_backward.slang"
     "clearSurfaceGradient:bolt_backward.slang"
     "adamUpdateBolt:bolt_optimizer.slang"
+    "computeS95FindLevel:s95_gpu.slang"
+    "computeS95LossBUF:s95_gpu.slang"
     "computeWoSInfluence:wos_influence.slang"
 )
 

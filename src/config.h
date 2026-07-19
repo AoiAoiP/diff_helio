@@ -70,7 +70,7 @@ struct Config {
     float boltMargin = 0.08f;              // edge margin fraction (0..0.5)
     bool enableMSELoss = false;          // MSE loss: match ideal elliptical flux pixel-by-pixel
     bool disableGravity = false;       // if true, zero out gravity in proxy model
-    std::string influenceDataPath = "data";
+    std::string influenceDataPath = "data_proxy";
 
     // B-spline dimensionality reduction (25 CPs -> 35 bolts)
     bool useBSpline = false;

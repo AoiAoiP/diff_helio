@@ -45,7 +45,7 @@ def main():
     parser = argparse.ArgumentParser(description="Validate ellipse vs optimized bolt heights")
     parser.add_argument("--ellipse-file", default="data/ellipse_north.txt",
                         help="Ellipse config file (default: data/ellipse_north.txt)")
-    parser.add_argument("--opt-bolts", default="results_vsm_mnvn_300iter/North_300m_BEST_bolts.txt",
+    parser.add_argument("--opt-bolts", default="results_north_300iter/North_300m_BEST_bolts.txt",
                         help="Optimized bolt file")
     parser.add_argument("--output-dir", default="validation_ellipse_vs_opt",
                         help="Output directory for bolt files and comparison data")

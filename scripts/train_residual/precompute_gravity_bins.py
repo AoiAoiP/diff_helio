@@ -48,7 +48,7 @@ def main():
                     help='render grid resolution GS (default 32, matches current pipeline)')
     ap.add_argument('--source-dir', default='train_data/zero_heights_ON',
                     help='dir holding node_dump_{ang}deg.csv (default zero_heights_ON, NLGEOM-ON)')
-    ap.add_argument('--output-dir', default='data_vsm_mnvn_tik32',
+    ap.add_argument('--output-dir', default='data_proxy',
                     help='dir to write gravity_{ang}deg.bin + gravity_angles.json')
     ap.add_argument('--angles', type=int, nargs='+', default=[0, 30, 45, 60, 75],
                     help='FEA tilt angles to process (default 0 30 45 60 75)')

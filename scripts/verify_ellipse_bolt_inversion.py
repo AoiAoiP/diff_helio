@@ -30,7 +30,7 @@ def bolt_positions():
     return pos
 
 # -- Load influence functions ----------------------------------------─
-DATA_DIR = "data_vsm_mnvn_tik32"
+DATA_DIR = "data_proxy"
 
 def load_bin(path, dtype=np.float32):
     return np.fromfile(path, dtype=dtype)

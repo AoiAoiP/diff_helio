@@ -1,7 +1,7 @@
 {
   "sun_train_file": "data/36_sundir_fast.txt",
   "sun_validation_file": "data/36_sundir_fast.txt",
-  "ellipse_file": "data/ellipse_north.txt",
+  "ellipse_file": "data/ellipse_swe_300m.txt",
   "receiver_radius": 10.0,
   "receiver_height": 20.0,
   "pixel_width": 157,
@@ -32,7 +32,7 @@
   "num_bolts_z": 5,
   "bolt_margin": 0.08,
   "use_bspline": 0,
-  "influence_data_path": "data_vsm_mnvn_tik32",
-  "output_dir": "results_vsm_mnvn_300iter",
+  "influence_data_path": "data_proxy",
+  "output_dir": "results_4mirror_300iter",
   "samplePoolPow": 26
 }

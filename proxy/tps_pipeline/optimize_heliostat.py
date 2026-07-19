@@ -33,7 +33,7 @@ from optimizer import AdamOptimizer
 # ==========================================================================
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(ROOT, 'data')
-GRAVITY_DIR = os.path.join(ROOT, 'data_vsm_mnvn_tik32')
+GRAVITY_DIR = os.path.join(ROOT, 'data_proxy')
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SUN_TRAIN_FILE = os.path.join(DATA_DIR, '36_sundir_fast.txt')

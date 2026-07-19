@@ -88,6 +88,9 @@ private:
     void loadBoltShaders();
     void boltBackwardPass();
     void boltAdamStep(uint32_t iteration);
+    // GPU S95: cooperative binary-search level find + buffer-fed sigmoid loss
+    void computeS95FindLevelCmd(VkCommandBuffer cmd);
+    void computeS95LossBUFCmd(VkCommandBuffer cmd);
 
     // Phase 2: Batched dispatch helpers (operate within existing command buffer)
     void boltForwardSurfaceCmd(VkCommandBuffer cmd, uint32_t batchCount);
@@ -120,7 +123,8 @@ private:
 
     // SPIR-V (Bolt mode)
     std::vector<uint32_t> m_spvBoltSurface, m_spvBoltBackward, m_spvBoltBackwardReduce,
-                         m_spvBoltProject, m_spvBoltClearSurface, m_spvBoltAdam;
+                         m_spvBoltProject, m_spvBoltClearSurface, m_spvBoltAdam,
+                         m_spvS95FindLevel, m_spvS95LossBUF;
 
     // Pipelines (Bezier mode)
     ComputePipeline m_pipeBezier, m_pipeForward, m_pipeClear, m_pipeFinalize,
@@ -129,7 +133,8 @@ private:
 
     // Pipelines (Bolt mode)
     ComputePipeline m_pipeBoltSurface, m_pipeBoltBackward, m_pipeBoltBackwardReduce,
-                    m_pipeBoltProject, m_pipeBoltClearSurface, m_pipeBoltAdam;
+                    m_pipeBoltProject, m_pipeBoltClearSurface, m_pipeBoltAdam,
+                    m_pipeS95FindLevel, m_pipeS95LossBUF;
 
     // GPU resources (shared)
     GpuBuffer m_yGrid, m_nGrid, m_s95CountBuf, m_fluxPartial;  // Phase1: m_gaussianPool removed
@@ -167,6 +172,8 @@ private:
     GpuBuffer m_boltGradPartialTile;
     GpuBuffer m_dummyBuf; // small dummy buffer for unused bindings
     GpuBuffer m_sunBatchFlat; // Phase 2: sun batch data (binding 41)
+    // GPU S95 (bindings 52/53): level state + fixed-point scalar-loss accumulator
+    GpuBuffer m_s95State, m_lossAccum;
     std::array<float,3> m_lastSunDir = {0,1,0};
     static constexpr uint32_t kSunBatchSize = 6;
 

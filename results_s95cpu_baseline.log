@@ -1,0 +1,60 @@
+=== Bezier Heliostat Surface Optimizer ===
+Receiver: 157x50, radius=10.0m
+Heliostat: 12.84x9.45m, grid=32
+Optimizer: 200 iters, lr=4.0e-04
+Loaded: 36 train, 36 val, 1 configs (filtered from 1)
+Selected GPU: NVIDIA GeForce RTX 4070 SUPER (discrete)
+
+[1/1] North
+  [diag] binding 31: buf=0x2772be68650, size=24, writes_cnt=20
+  Loaded gravity_10deg.bin (PV=12.103 mm)
+  Loaded gravity_14deg.bin (PV=11.969 mm)
+  Loaded gravity_18deg.bin (PV=11.796 mm)
+  Loaded gravity_22deg.bin (PV=11.579 mm)
+  Loaded gravity_26deg.bin (PV=11.148 mm)
+  Loaded gravity_30deg.bin (PV=10.838 mm)
+  Loaded gravity_34deg.bin (PV=10.389 mm)
+  Loaded gravity_38deg.bin (PV=9.986 mm)
+  Loaded gravity_42deg.bin (PV=9.540 mm)
+  Loaded gravity_46deg.bin (PV=9.050 mm)
+  Loaded gravity_50deg.bin (PV=8.542 mm)
+  Loaded gravity_54deg.bin (PV=7.309 mm)
+  Loaded gravity_58deg.bin (PV=6.243 mm)
+  Loaded gravity_62deg.bin (PV=5.571 mm)
+  Loaded gravity_66deg.bin (PV=4.166 mm)
+  Loaded gravity_70deg.bin (PV=3.500 mm)
+  Loaded gravity_73deg.bin (PV=2.706 mm)
+  Loaded gravity_76deg.bin (PV=2.239 mm)
+  Loaded gravity_78deg.bin (PV=1.925 mm)
+  Loaded gravity_80deg.bin (PV=1.608 mm)
+Optimizing (BOLT mode, 35 bolts): North (dist=300.0m)
+  Sparse culling: 3950 active / 7850 total pixels (50%)
+  init flux: nzPix=3850 maxF=677.97 sumF=415078.38
+ S95=227.3464 m^2
+  Iter   0: Loss=52239.398438, S95=227.3420 m^2, time=2.0s, s95cpu=26ms
+  Iter   1: Loss=48586.261719, S95=210.7646 m^2, time=1.9s, s95cpu=56ms
+  Iter   2: Loss=45212.765625, S95=195.8860 m^2, time=2.0s, s95cpu=84ms
+  Iter  10: Loss=32157.394531, S95=138.1545 m^2, time=2.0s, s95cpu=296ms
+  Iter  20: Loss=24406.261719, S95=104.1684 m^2, time=2.0s, s95cpu=563ms
+  Iter  30: Loss=18921.736328, S95=79.7915 m^2, time=2.0s, s95cpu=838ms
+  Iter  40: Loss=15892.416992, S95=66.6338 m^2, time=2.1s, s95cpu=1109ms
+  Iter  50: Loss=14064.300781, S95=58.2651 m^2, time=2.0s, s95cpu=1380ms
+  Iter  60: Loss=12703.596680, S95=52.4666 m^2, time=2.0s, s95cpu=1645ms
+  Iter  70: Loss=12221.942383, S95=50.4878 m^2, time=2.0s, s95cpu=1900ms
+  Iter  80: Loss=12192.068359, S95=50.2922 m^2, time=2.0s, s95cpu=2176ms
+  Iter  90: Loss=12173.304688, S95=50.2299 m^2, time=2.0s, s95cpu=2435ms
+  Iter 100: Loss=12148.455078, S95=50.1499 m^2, time=2.2s, s95cpu=2798ms
+  Iter 110: Loss=12124.828125, S95=50.0965 m^2, time=2.1s, s95cpu=3208ms
+  Iter 120: Loss=12139.934570, S95=50.1098 m^2, time=2.1s, s95cpu=3567ms
+  Iter 130: Loss=12143.565430, S95=50.0787 m^2, time=2.1s, s95cpu=3867ms
+  Iter 140: Loss=12148.546875, S95=50.0743 m^2, time=2.0s, s95cpu=4186ms
+  Iter 150: Loss=12144.525391, S95=50.0609 m^2, time=2.4s, s95cpu=4471ms
+  Iter 160: Loss=12155.292969, S95=50.0743 m^2, time=2.0s, s95cpu=4818ms
+  Iter 170: Loss=12163.890625, S95=50.0565 m^2, time=2.1s, s95cpu=5103ms
+  Iter 180: Loss=12164.618164, S95=50.0520 m^2, time=2.0s, s95cpu=5475ms
+  Iter 190: Loss=12163.477539, S95=50.0609 m^2, time=2.0s, s95cpu=5812ms
+  Done. Best S95: 50.0520 (init: 227.3464, reduction: 78.0%)
+  Time: total=291.8s, s95cpu_total=6117ms
+  Bolt stroke: min=0.000mm  max=36.043mm  (zero-based)
+
+=== Done in 292 sec. Results: results_s95cpu_baseline ===

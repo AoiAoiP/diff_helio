@@ -73,10 +73,10 @@ def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
     """Generate ANSYS APDL input for gravity simulation at angle_deg.
 
     Models the plate TILTED about X-axis (matching Workbench GUI approach):
-    - Plate is rotated by angle θ → global Z compressed by cos(θ)
+    - Plate corners use GUI convention: plate normal = (0, cosθ, +sinθ)
     - Gravity is always vertical: ACEL,0,9.81,0
     - Bolt nodes fixed (all DOF=0) for zero-height gravity-only sim
-    - Output: 7-column CSV (x,y,z,ux,uy,uz,usum)
+    - Output: 7-column CSV (x,y,z,ux,uy,uz,usum) matching train_data/ format
 
     Args:
         layout: bolt layout config dict
@@ -98,14 +98,16 @@ def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
     sin_t = np.sin(theta)
     cos_t = np.cos(theta)
 
-    # Plate corners in global coords (tilted about X):
-    #   (x, y, z)_global = (x_flat, z_flat*sinθ, z_flat*cosθ)
+    # Plate corners in global coords (tilted about X).
+    # GUI convention: plate normal = (0, cosθ, +sinθ) in global coords.
+    # When z_local=+hl (top edge), global Y=-hl*sin_t (below origin).
+    # Matches train_data/APDL_pre.txt and Ansys Workbench GUI.
     hw, hl = W / 2.0, L / 2.0
     corners_global = [
-        (-hw,  hl * sin_t,  hl * cos_t),   # -X, +Z
-        ( hw,  hl * sin_t,  hl * cos_t),   # +X, +Z
-        ( hw, -hl * sin_t, -hl * cos_t),   # +X, -Z
-        (-hw, -hl * sin_t, -hl * cos_t),   # -X, -Z
+        (-hw, -hl * sin_t,  hl * cos_t),   # -X, +Z (top edge, below origin)
+        ( hw, -hl * sin_t,  hl * cos_t),   # +X, +Z
+        ( hw,  hl * sin_t, -hl * cos_t),   # +X, -Z (bottom edge, above origin)
+        (-hw,  hl * sin_t, -hl * cos_t),   # -X, -Z
     ]
 
     dat_path = os.path.join(work_dir, f"gravity_{angle_deg}deg.dat")
@@ -137,7 +139,14 @@ def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
     lines.append("ET,1,SHELL181          ! 4-node structural shell")
     lines.append("R,1,thick")
     lines.append("")
-    lines.append("! ── Geometry: clean 4-sided area (no hardpoints) ──")
+    lines.append("! ── Geometry: 4-sided area with bolt hardpoints ──")
+    lines.append(f"K,1,{corners_global[0][0]:.6f},{corners_global[0][1]:.6f},{corners_global[0][2]:.6f}")
+    lines.append(f"K,2,{corners_global[1][0]:.6f},{corners_global[1][1]:.6f},{corners_global[1][2]:.6f}")
+    lines.append(f"K,3,{corners_global[2][0]:.6f},{corners_global[2][1]:.6f},{corners_global[2][2]:.6f}")
+    lines.append(f"K,4,{corners_global[3][0]:.6f},{corners_global[3][1]:.6f},{corners_global[3][2]:.6f}")
+    lines.append("A,1,2,3,4")
+    lines.append("")
+    lines.append("! ── Geometry: 4-sided area ──")
     lines.append(f"K,1,{corners_global[0][0]:.6f},{corners_global[0][1]:.6f},{corners_global[0][2]:.6f}")
     lines.append(f"K,2,{corners_global[1][0]:.6f},{corners_global[1][1]:.6f},{corners_global[1][2]:.6f}")
     lines.append(f"K,3,{corners_global[2][0]:.6f},{corners_global[2][1]:.6f},{corners_global[2][2]:.6f}")
@@ -145,10 +154,10 @@ def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
     lines.append("A,1,2,3,4")
     lines.append("")
     mesh_size = layout.get("mesh_size_m", 0.200)
-    lines.append("! ── Mesh: clean mapped mesh (no hardpoints, matches Workbench) ──")
-    lines.append(f"ESIZE,{mesh_size:.4f}              ! element size (default 0.2m, matches Workbench)")
+    lines.append("! ── Mesh: free quad mesh (matching Workbench, 0.2m element size) ──")
+    lines.append(f"ESIZE,{mesh_size:.4f}              ! element size (0.2m, matching Workbench)")
     lines.append("MSHAPE,0,2D             ! quad elements")
-    lines.append("MSHKEY,1                ! mapped mesh (clean structured grid)")
+    lines.append("MSHKEY,0                ! free mesh")
     lines.append("AMESH,ALL")
     lines.append("")
     lines.append("! ── BC: NSEL near each bolt, then D (exact match of APDL_pre.txt) ──")
@@ -256,22 +265,22 @@ def parse_node_output(csv_path):
 
 
 def run_gravity_bins_from_csv(csv_dir, output_dir, grid_size, angles):
-    """Call precompute_gravity_bins.py to process ANSYS CSV → .bin files.
+    """Call generate_proxy_model.py gravity to process ANSYS CSV -> .bin files.
 
-    This reuses the existing interpolation/un-compression logic.
+    Uses pixel-centered grid + plate-normal w extraction (matching shader convention).
     """
-    script = ROOT / "scripts" / "train_residual" / "precompute_gravity_bins.py"
+    script = ROOT / "scripts" / "generate_proxy_model.py"
     cmd = [
-        sys.executable, str(script),
-        "--source-dir", csv_dir,
-        "--output-dir", output_dir,
+        sys.executable, str(script), "gravity",
+        "--source-dir", str(csv_dir),
+        "--output-dir", str(output_dir),
         "--grid-size", str(grid_size),
         "--angles", *[str(int(a)) for a in angles],
     ]
-    print(f"  Converting CSV → .bin via precompute_gravity_bins.py...")
+    print(f"  Converting CSV -> .bin via generate_proxy_model.py gravity...")
     result = subprocess.run(cmd, cwd=str(ROOT))
     if result.returncode != 0:
-        print("  ERROR: precompute_gravity_bins.py failed", file=sys.stderr)
+        print("  ERROR: generate_proxy_model.py gravity failed", file=sys.stderr)
     return result.returncode == 0
 
 
@@ -279,8 +288,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--bolt-layout", default="configs/bolt_layouts/7x5_default.json",
-                   help="Bolt layout JSON config file")
-    p.add_argument("--output-dir", default="data_ansys_gravity",
+                   help="Bolt layout JSON config file (DEPRECATED: use generate_proxy_model.py gravity-ansys)")
+    p.add_argument("--output-dir", default="data_proxy",
                    help="Output directory for gravity_*.bin files")
     p.add_argument("--grid-size", type=int, default=32,
                    help="Render grid resolution (default: 32)")

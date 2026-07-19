@@ -71,26 +71,30 @@ Shader 由 Slang 编译，入口点映射见 `CMakeLists.txt:68-87`。每个 ent
 - **Bolt 模式**（当前默认）：35 螺栓调节量 → TPS 影响函数叠加 → 表面位移 → Vulkan 光追 → S95 光斑损失 → Slang bwd_diff 反传梯度 → Adam 更新
 - **Bezier 模式**（已废弃）：16 个 Bézier 控制点参数化表面
 
-### 数据流（每太阳方向 × 每迭代）
+### 数据流（每太阳方向 × 每迭代，单次 submit）
 
 ```
-boltForwardSurface (力学正向) → forwardRender (光追) → S95 loss (CPU 二分搜索)
-→ boltBackwardPass (光学反传 + 力学投影) → boltAdamStep (参数更新)
+boltForwardSurface (力学正向) → forwardRender (光追) → computeS95FindLevel (GPU 协作二分查找)
+→ computeS95LossBUF (从 GPU buffer 读阈值) → boltBackwardPass (光学反传 + 力学投影)
+→ boltAdamStep (参数更新，每迭代一次)
 ```
 
-### GPU Dispatch 总览（每太阳方向 × 每迭代）
+> S95 阈值不再回读 CPU：单 workgroup 在 GPU 上做与 CPU 版语义一致的二分查找（20 轮、严格 `f>mid` 能量和、>0.95 判定），精度仅受浮点归约顺序影响（~1e-6 相对误差）。标量 loss 以定点数 ×1e3 在 GPU 累加，每迭代回读 4 字节。环境变量 `BEZIER_S95_GPU=0` 可回退到旧 CPU 路径（A/B 对比用）。历史教训：Phase 3 的固定范围 256-bin 直方图有 ~1.5 W/m² 系统偏差，导致 sigmoid 饱和 —— 见 `optimization_plan.md`。
+
+### GPU Dispatch 总览（每太阳方向 × 每迭代，单次 submit）
 
 | Dispatch | Shader | Grid | 说明 |
 |----------|--------|------|------|
 | `(1,1,1)` | `computeBoltSurface` | 1024 threads | 力学正向 |
 | `(1,1,1)` | `clearFlux` | 7850 threads | 清零能流 |
-| `(ceil(7850/256),1,1)` | `renderForward` | ~31 groups | 光追正向 |
+| `(kTileCount, ~3950, 1)` | `renderForward` | 稀疏像素 | 光追正向 |
 | `(1,1,1)` | `finalizeFlux` | 7850 threads | 归一化 |
-| `(1,1,1)` | `computeS95Loss` | 7850 threads | 损失梯度 |
-| `(7850, kTileCount, 1)` | `renderBackwardBolt` | ~31400 groups | 光追反向 |
+| `(1,1,1)` | `computeS95FindLevel` | 256 threads × 1 group | GPU 协作二分查找 S95 阈值 |
+| `(10,4,1)` | `computeS95LossBUF` | 7850 threads | 损失梯度 + 标量 loss 累加 |
+| `(~3950, kTileCount, 1)` | `renderBackwardBolt` | ~15800 groups | 光追反向 |
 | `(1,1,1)` | `reduceSurfaceGradients` | 1 group | 跨 group 归约 |
 | `(1,1,1)` | `projectBoltGradients` | 35 threads | 投影到螺栓梯度 |
-| `(1,1,1)` | `boltAdamStep` | 35 threads | Adam 更新 |
+| `(1,1,1)` | `boltAdamStep` | 35 threads | Adam 更新（每迭代一次） |
 
 ### 关键源文件
 
@@ -100,8 +104,9 @@ boltForwardSurface (力学正向) → forwardRender (光追) → S95 loss (CPU �
 | `shaders/bolt_forward.slang` | 力学正向：影响函数 + 重力叠加 → yGrid/nGrid |
 | `shaders/bolt_backward.slang` | 三阶段反向：bwd_diff → reduceSurfaceGradients → projectBoltGradients |
 | `shaders/bolt_common.slang` | 影响函数求值、20-bin 重力插值 `sampleGravityUY` |
+| `shaders/s95_gpu.slang` | GPU 端 S95：协作二分查找阈值 + buffer 版 sigmoid 损失 |
 | `shaders/forward.slang` | 光线追踪、双折射玻璃、Buie 太阳模型 |
-| `shaders/loss.slang` | S95 sigmoid 损失、GPU 直方图 |
+| `shaders/loss.slang` | S95 sigmoid 损失（push-constant 版，Bezier/MSE 路径用）、GPU 直方图 |
 | `shaders/bolt_optimizer.slang` | Adam 参数更新 |
 | `shaders/common.slang` | UBO、坐标变换、Wang hash |
 | `src/vulkan_app.h/cpp` | Vulkan 封装：buffer/texture/cmd/pipeline |

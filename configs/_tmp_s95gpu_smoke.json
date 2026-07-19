@@ -1,6 +1,6 @@
 {
-  "sun_train_file": "data/3_validation_sundirs.txt",
-  "sun_validation_file": "data/3_validation_sundirs.txt",
+  "sun_train_file": "data/36_sundir_fast.txt",
+  "sun_validation_file": "data/36_sundir_fast.txt",
   "ellipse_file": "data/ellipse_north.txt",
   "receiver_radius": 10.0,
   "receiver_height": 20.0,
@@ -18,12 +18,13 @@
   "csr": 0.01,
   "sun_sigma": 0.00251,
   "sun_theta_max": 0.00465,
-  "iterations": 1,
-  "learning_rate": 0.0002,
+  "iterations": 10,
+  "learning_rate": 0.0004,
+  "min_learning_rate": 0.0004,
   "beta1": 0.9,
   "beta2": 0.999,
   "adam_epsilon": 1e-08,
-  "patience": 1,
+  "patience": 20,
   "energy_target": 1.0,
   "use_bolt": 1,
   "num_bolts": 35,
@@ -32,5 +33,6 @@
   "bolt_margin": 0.08,
   "use_bspline": 0,
   "influence_data_path": "data_proxy",
-  "output_dir": "validation/flux_proxy"
+  "output_dir": "results_s95gpu_smoke",
+  "samplePoolPow": 26
 }

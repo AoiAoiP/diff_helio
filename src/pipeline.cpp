@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -102,6 +103,8 @@ void BezierPipeline::loadBoltShaders() {
     m_spvBoltProject   = loadSpv("projectBoltGradients");
     m_spvBoltClearSurface = loadSpv("clearSurfaceGradient");
     m_spvBoltAdam      = loadSpv("adamUpdateBolt");
+    m_spvS95FindLevel  = loadSpv("computeS95FindLevel");
+    m_spvS95LossBUF    = loadSpv("computeS95LossBUF");
 }
 
 void BezierPipeline::createPipelines() {
@@ -391,6 +394,8 @@ void BezierPipeline::createBoltPipelines() {
     // Bindings 31-50: multi-angle FEA gravity bins (10/14/18/.../78/80 deg)
     for (uint32_t b = 31; b <= 50; b++)
         bindings.push_back(sb(b));
+    bindings.push_back(sb(52)); // s95State (GPU S95 level)
+    bindings.push_back(sb(53)); // lossAccumFixed (GPU scalar loss)
     bindings.push_back(sb(55)); // activePixelList (A1: sparse culling)
 
     VkDescriptorSetLayoutCreateInfo linfo{};
@@ -451,6 +456,8 @@ void BezierPipeline::createBoltPipelines() {
     m_pipeBoltProject   = createPipe(m_spvBoltProject,   "main", sizeof(uint32_t) * 4);  // BoltBackwardPC
     m_pipeBoltClearSurface = createPipe(m_spvBoltClearSurface, "main", 0);
     m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", sizeof(float) * 5 + sizeof(uint32_t) * 1 + sizeof(float) * 2);  // AdamBoltPC
+    m_pipeS95FindLevel  = createPipe(m_spvS95FindLevel,  "main", 0);
+    m_pipeS95LossBUF    = createPipe(m_spvS95LossBUF,    "main", 0);
 
     m_boltPipelinesCreated = true;
 }
@@ -471,11 +478,11 @@ void BezierPipeline::createBoltBuffers() {
     m_surfaceGradient = m_app.createBuffer(gridPts * 3u * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     m_gravityY = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
-    // Load multi-angle gravity bins (10 angles: 0/12/22/30/35/45/52/60/67/75 degrees)
+    // Load 20-bin gravity angles (hardcoded, must match data_proxy/ and shaders/bolt_common.slang)
     {
         const int gravityAngles[20] = {10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
                                         50, 54, 58, 62, 66, 70, 73, 76, 78, 80};
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 20; i++) {
             m_gravityBins[i] = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
             std::string gravPath = m_cfg.influenceDataPath + "/gravity_" + std::to_string(gravityAngles[i]) + "deg.bin";
             std::ifstream fg(gravPath, std::ios::binary);
@@ -527,6 +534,10 @@ void BezierPipeline::createBoltBuffers() {
     m_app.uploadBuffer(m_dummyBuf, dummyData.data(), 64);
     m_sunBatchFlat = m_app.createBuffer(kSunBatchSize * 8 * sizeof(float),
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    // GPU S95: [0]=level, [2]=total, [3]=maxFlux + fixed-point scalar-loss accum.
+    // Host-visible so the per-iteration loss readback is a bare memcpy.
+    m_s95State = m_app.createBuffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+    m_lossAccum = m_app.createBuffer(sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
     // Bind all descriptors
     VkDescriptorSet set = m_boltDescriptorSet;
@@ -583,6 +594,8 @@ void BezierPipeline::createBoltBuffers() {
         {m_gravityBins[19].buffer, 0, m_gravityBins[19].size}, // 50: gravityBin80
         {m_sunBatchFlat.buffer, 0, m_sunBatchFlat.size},       // 51: sunBatchFlat (Phase 2)
         {m_activePixelList.buffer, 0, m_activePixelList.size}, // 55: activePixelList (A1)
+        {m_s95State.buffer, 0, m_s95State.size},               // 52: s95State (GPU S95)
+        {m_lossAccum.buffer, 0, m_lossAccum.size},             // 53: lossAccumFixed (GPU S95)
     };
 
     VkDescriptorImageInfo imgInfos[] = {
@@ -590,8 +603,8 @@ void BezierPipeline::createBoltBuffers() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(50);
-    for (int i = 0; i < 50; i++) {
+    std::vector<VkWriteDescriptorSet> writes(52);
+    for (int i = 0; i < 52; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -645,6 +658,13 @@ void BezierPipeline::createBoltBuffers() {
     writes[49].dstBinding = 55;
     writes[49].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[49].pBufferInfo = &sbInfos[42];
+    // Binding 52/53: GPU S95 state + loss accumulator
+    writes[50].dstBinding = 52;
+    writes[50].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[50].pBufferInfo = &sbInfos[43];
+    writes[51].dstBinding = 53;
+    writes[51].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[51].pBufferInfo = &sbInfos[44];
     vkUpdateDescriptorSets(m_app.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     m_boltBuffersCreated = true;
@@ -871,6 +891,22 @@ void BezierPipeline::clearFluxGradientCmd(VkCommandBuffer cmd) {
 void BezierPipeline::computeS95LossCmd(VkCommandBuffer cmd, float s95Level) {
     m_app.bindPipeline(cmd, m_pipeLoss);
     m_app.pushConstants(cmd, m_pipeLoss.layout, &s95Level, sizeof(float));
+    m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
+    m_app.pipelineBarrier(cmd);
+}
+
+// GPU S95: cooperative binary-search level find (single workgroup), level
+// stays on GPU in m_s95State[0] — replaces readFlux() + CPU binary search.
+void BezierPipeline::computeS95FindLevelCmd(VkCommandBuffer cmd) {
+    m_app.bindPipeline(cmd, m_pipeS95FindLevel);
+    m_app.dispatch(cmd, 1, 1, 1);
+    m_app.pipelineBarrier(cmd);
+}
+
+// GPU S95: sigmoid loss reading the level from m_s95State (no push constant,
+// no host round trip); also accumulates the scalar loss into m_lossAccum.
+void BezierPipeline::computeS95LossBUFCmd(VkCommandBuffer cmd) {
+    m_app.bindPipeline(cmd, m_pipeS95LossBUF);
     m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
     m_app.pipelineBarrier(cmd);
 }
@@ -1595,6 +1631,13 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             std::vector<float> zeros(n, 0.0f);
             m_app.uploadBuffer(m_boltHeightGradient, zeros.data(), n * sizeof(float));
 
+            const bool useMse = m_useMSELoss && !m_idealFlux.empty();
+            // A/B harness: BEZIER_S95_GPU=0 reverts to the CPU readFlux +
+            // binary-search path (two submits per sun) for direct comparison.
+            static const bool s_gpuS95 = []() {
+                const char *e = getenv("BEZIER_S95_GPU");
+                return !(e && e[0] == '0');
+            }();
             for (size_t si = 0; si < trainDirs.size(); si++) {
                 const auto &sd = trainDirs[si];
                 // Host-visible UBOs (sun/receiver/heliostat) are persistent-mapped:
@@ -1612,7 +1655,25 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                     std::memcpy(&batch[4], &lo, 4); std::memcpy(&batch[5], &hi, 4); batch[6] = gt;
                 }
 
-                // Phase 2 batch 1: sunBatch update + boltForward + clearRayValidity + forwardRender
+                if (!useMse && s_gpuS95) {
+                    // GPU S95 path: forward + cooperative S95 level find + sigmoid
+                    // loss + backward in ONE submit. The level stays on GPU
+                    // (m_s95State) — no readFlux()/CPU binary search per sun.
+                    auto pass = m_app.beginComputePassRaw();
+                    if (si == 0) m_app.fillBufferCmd(pass.cmd, m_lossAccum, 0u);
+                    m_app.updateBufferCmd(pass.cmd, m_sunBatchFlat, 0, 8 * sizeof(float), batch);  // A2
+                    boltForwardSurfaceCmd(pass.cmd, 1);
+                    clearRayValidityCmd(pass.cmd);
+                    forwardRenderCmd(pass.cmd);
+                    computeS95FindLevelCmd(pass.cmd);
+                    clearFluxGradientCmd(pass.cmd);
+                    computeS95LossBUFCmd(pass.cmd);
+                    boltBackwardPassCmd(pass.cmd);
+                    m_app.submitAndWait(pass);
+                    continue;
+                }
+
+                // CPU S95 path: forward submit, readFlux + binary search, second submit
                 {
                     auto pass = m_app.beginComputePassRaw();
                     m_app.updateBufferCmd(pass.cmd, m_sunBatchFlat, 0, 8 * sizeof(float), batch);  // A2
@@ -1625,7 +1686,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                 auto flux = readFlux();
                 float s95Level = computeS95Level(flux);
                 if (s95Level > 0) {
-                    if (m_useMSELoss && !m_idealFlux.empty()) {
+                    if (useMse) {
                         // MSE loss: compute gradient on CPU, upload to fluxGradient
                         std::vector<float> mseGrad(m_totalPixels);
                         float mseLoss = 0.0f;
@@ -1660,6 +1721,12 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                         totalLoss += lossVal;
                     }
                 }
+            }
+            if (!useMse && s_gpuS95) {
+                // Scalar sigmoid loss accumulated on GPU (fixed-point x1e3)
+                uint32_t lossFixed = 0;
+                m_app.downloadBuffer(m_lossAccum, &lossFixed, sizeof(uint32_t));
+                totalLoss = (float)lossFixed * 1e-3f;
             }
             if (m_cfg.useBSpline) {
                 // Download bolt gradients, project to CPs, CPU Adam step
