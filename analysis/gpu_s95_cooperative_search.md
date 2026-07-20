@@ -2,7 +2,7 @@
 
 **日期**: 2026-07-19
 **状态**: 已完成并验证（200-iter A/B 对比通过，已作为默认路径）
-**相关文档**: `analysis/diffspt_performance_optimization_plan.md`（原优化计划，Phase 3 的教训记录）、`analysis/failed_experiment_gpu_s95.md`（Phase 3 失败分析）
+**相关文档**: `analysis/arcaim_comparison.md`（含 Phase 3 教训与 P0/P1 实施结果）、`analysis/failed_experiment_gpu_s95.md`（Phase 3 失败分析）
 
 ---
 

@@ -161,7 +161,7 @@ S95 是非平滑序统计量类指标，前期梯度信号稀疏。可借鉴 ARC
 
 前向是接收像素 × 1024 个确定性镜面网格点（`shaders/forward.slang:119-136`），但对任一接收像素，**绝大多数网格点的反射方向根本不在日轮内**（贡献严格为零或 ~1e-30），却仍走完整个双层玻璃折射（3 次 normalize + sqrt + TIR 分支）+ Buie 求值。diffspt 的 `passesRaytracerCovarianceCull` 就是干这个的。
 
-曲面使精确协方差椭圆更难算，但有更朴素的版本：**先用宏观曲面法向（不含玻璃、不含斜率扰动）算一次 reflect，若反射方向与日轮中心角距 > θ_max + k·(斜率误差 + 玻璃偏折余量)，直接 skip**。玻璃偏折上界可离线估一个保守值。`analysis/diffspt_performance_optimization_plan.md` 估计可裁 80~95% 的 (pixel, sample) 对——**前向 5~20× 的加速全部来自这里**，反向同理（validity 缓存已帮反向跳过无效光路的 AD，但前向找出这些无效光路本身仍花了全价）。这是唯一一个量级级的剩余机会。
+曲面使精确协方差椭圆更难算，但有更朴素的版本：**先用宏观曲面法向（不含玻璃、不含斜率扰动）算一次 reflect，若反射方向与日轮中心角距 > θ_max + k·（斜率误差 + 玻璃偏折余量），直接 skip**。玻璃偏折上界可离线估一个保守值。此前的 diffspt 对比加速方案曾估计可裁 80~95% 的 (pixel, sample) 对——**前向 5~20× 的加速全部来自这里**，反向同理（validity 缓存已帮反向跳过无效光路的 AD，但前向找出这些无效光路本身仍花了全价）。这是唯一一个量级级的剩余机会。
 
 > **实施结果（2026-07-20，已并入 master）——预估被实测大幅修正**：已实现上述朴素版（`ray_cull` 默认 ON，`ray_cull_margin_mrad` 默认 8；cutoff 余弦经 SunParams `sunp[11]` 传入，`ray_cull=0` 逐位回退）。**无损口径下加速仅 −4.8%**（North300m 200 iter：311.7→296.8 s），与预估的 5~20× 相差两个量级。物理归因：
 >
@@ -237,7 +237,6 @@ diffspt 用 raytracer（高保真）+ covariance（解析高斯散射，106 s→
 | `L:\Code\diffspt-main\diffspt\shaders\planar.slang:47-103` | 特化参数 + 能量计算 |
 | `L:\Code\diffspt-main\diffspt\shaders\loss.slang:22-76, 358-395` | loss 梯度 + tanh 参数化 + GPU Adam |
 | `L:\Code\diffspt-main\diffspt\core\metrics.cpp:150-176` | 形状先验 loss CPU 参考实现 |
-| `analysis/diffspt_performance_optimization_plan.md` | 本项目此前的 diffspt 对比加速方案 |
 | `analysis/remaining_optimization_opportunities.md` | 本项目剩余优化项（B1~B5） |
 | `analysis/p0_validation_report.md` | P0（A1+L1）隔离验证：位精确一致性、margin 诊断、时空开销 |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证：iter-0 位精确、L1 偏移、200-iter 参考、计时 A/B |

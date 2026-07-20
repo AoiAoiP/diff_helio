@@ -112,7 +112,8 @@ rayValidity 检查**早退**，是近零成本的"空转组"。A1 省掉的只�
 ## 4. 对后续计划的影响
 
 1. **所有历史加速比需重新校准**：真基线为 ~2.1s/iter 均值（626.6s/300iter），
-   非 1.8s。修正见 [optimization_execution_plan](./optimization_execution_plan.md)。
+   非 1.8s。原始优化执行计划已随文档整理删除，修正后的结论已回写进
+   `arcaim_comparison.md` 与 `remaining_optimization_opportunities.md`。
 2. **Phase B（多 sun 批量）的收益预期需重估**：A2 已消除 sunBatchFlat 的 36 次
    staging 提交/iter；剩余每 sun 2 次 submitAndWait 仍在（72 fence waits/iter），
    Phase B 的合批收益依然成立，但绝对数字要按真基线重算。
@@ -123,5 +124,6 @@ rayValidity 检查**早退**，是近零成本的"空转组"。A1 省掉的只�
 
 ## 相关文档
 
-- [优化执行计划](./optimization_execution_plan.md)（基线与预期已按本实验修正）
 - [基线性能分析](./worktree_baseline_fixed_analysis.md)（其性能数据受 stale-shader 影响，见 §0）
+- [剩余优化空间](./remaining_optimization_opportunities.md)
+- [ARCAim 对比与 P0/P1 实施结果](./arcaim_comparison.md)
