@@ -79,6 +79,28 @@ struct Config {
 
     // Initial bolt heights file (elliptic guess, overrides zero-init)
     std::string boltInitFile;
+
+    // P1-L4: max bolt stroke for tanh bounded parameterization (m)
+    float maxBoltStroke = 0.040f;
+    // P1-L4: stroke regularization weight (0 = disabled)
+    float strokeRegularization = 0.0f;
+    // P1-A3: use reflection-only optics for ablation study (default false = full optics)
+    bool reflectionOnlyOptimization = false;
+    // P1-L3: per-iteration seed randomization (0 = fixed seed, 1 = randomize)
+    bool randomizeSeed = false;
+
+    // A1: per-ray angular pre-cull — skip Box-Muller + glass + sunshape for
+    // rays whose macro-normal reflection falls outside sun support + margin
+    // (their true energy contribution is zero). cos cutoff is passed in the
+    // SunParams UBO; disable for bit-exact A/B against the old path.
+    bool rayCull = true;
+    float rayCullMarginMrad = 8.0f;
+
+    // L1: efficiency term weight lambda for L_eff = lambda * M * E_ref / E
+    // (ARCAim-style scale-invariant energy guard; M = receiver pixel count
+    // keeps lambda ~ O(1) against the sigmoid sum). E_ref is the per-sun
+    // total flux captured at iteration 0. 0 disables (bit-exact S95-only).
+    float lambdaEnergy = 0.0f;
 };
 
 // Load config from JSON file, compute Buie constants

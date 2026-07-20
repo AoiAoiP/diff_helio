@@ -41,8 +41,8 @@ public struct SunParams {
     float4 shapeParams;
     float shapeIntegral;
     float type;            // kSunshape* (0=Buie, 1=Pillbox, 2=Gaussian)
-    float _pad1;
-    float _pad2;
+    float iterationSeed;   // P1-L3: per-iteration seed for Gaussian randomization (0=fixed)
+    float cullCosCutoff;   // A1: cos(sun support + margin); < -1.5 disables the pre-cull
     float _pad3;
 };
 
@@ -203,7 +203,10 @@ public void generateGaussianSamples(
     uint base = rayIndex * 0x9E3779B9u;
     base ^= pixelIndex * 0x94D049BBu;
     base += sppIndex * 0x5BD1E995u;
-    base ^= kSamplingSeed * 0xA5A5A5A5u;
+    // P1-L3: mix in iteration seed for per-iteration randomization (0 = fixed)
+    float iterSeed = getIterationSeed();
+    uint iterBits = (iterSeed > 0.0f) ? asuint(iterSeed) : kSamplingSeed;
+    base ^= iterBits * 0xA5A5A5A5u;
 
     uint h0 = mixBits(base);
     uint h1 = mixBits(base ^ 0xDEADBEEFu);
@@ -250,6 +253,8 @@ public float getSunDni()                    { return sun.dni; }
 public float4 getSunShapeParams()           { return sun.shapeParams; }
 public float getSunShapeIntegral()           { return sun.shapeIntegral; }
 public float getSunShapeType()               { return sun.type; }
+public float getSunCullCos()                 { return sun.cullCosCutoff; }
+public float getIterationSeed()              { return sun.iterationSeed; }
 
 public ReceiverSample sampleReceiverPixel(uint2 pixelCoord) {
     return computeReceiverSample(pixelCoord, receiver.dims, receiver.onePixelHeight,

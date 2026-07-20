@@ -52,6 +52,7 @@ BezierPipeline::~BezierPipeline() {
     }
     destroyPipeNoLayout(m_pipeBezier);
     destroyPipeNoLayout(m_pipeForward);
+    for (int i = 0; i < 3; i++) destroyPipeNoLayout(m_pipeForwardTyped[i]);  // P1-A2
     destroyPipeNoLayout(m_pipeClear);
     destroyPipeNoLayout(m_pipeBackward);
     destroyPipeNoLayout(m_pipeBackwardReduce);
@@ -69,6 +70,7 @@ BezierPipeline::~BezierPipeline() {
     }
     destroyPipeNoLayout(m_pipeBoltSurface);
     destroyPipeNoLayout(m_pipeBoltBackward);
+    for (int i = 0; i < 3; i++) destroyPipeNoLayout(m_pipeBoltBackwardTyped[i]);  // P1-A2
     destroyPipeNoLayout(m_pipeBoltBackwardReduce);
     destroyPipeNoLayout(m_pipeBoltProject);
     destroyPipeNoLayout(m_pipeBoltClearSurface);
@@ -105,6 +107,13 @@ void BezierPipeline::loadBoltShaders() {
     m_spvBoltAdam      = loadSpv("adamUpdateBolt");
     m_spvS95FindLevel  = loadSpv("computeS95FindLevel");
     m_spvS95LossBUF    = loadSpv("computeS95LossBUF");
+    // P1-A2: specialized sunshape variants
+    m_spvForwardTyped[0]  = loadSpv("renderForwardBuie");
+    m_spvForwardTyped[1]  = loadSpv("renderForwardPillbox");
+    m_spvForwardTyped[2]  = loadSpv("renderForwardGaussian");
+    m_spvBoltBackwardTyped[0] = loadSpv("renderBackwardBoltBuie");
+    m_spvBoltBackwardTyped[1] = loadSpv("renderBackwardBoltPillbox");
+    m_spvBoltBackwardTyped[2] = loadSpv("renderBackwardBoltGaussian");
 }
 
 void BezierPipeline::createPipelines() {
@@ -455,9 +464,15 @@ void BezierPipeline::createBoltPipelines() {
     m_pipeBoltBackwardReduce = createPipe(m_spvBoltBackwardReduce, "main", 0);
     m_pipeBoltProject   = createPipe(m_spvBoltProject,   "main", sizeof(uint32_t) * 4);  // BoltBackwardPC
     m_pipeBoltClearSurface = createPipe(m_spvBoltClearSurface, "main", 0);
-    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", sizeof(float) * 5 + sizeof(uint32_t) * 1 + sizeof(float) * 2);  // AdamBoltPC
+    // AdamBoltPC: lr(4)+beta1(4)+beta2(4)+eps(4)+iterF(4)+numBolts:uint(4)+hMax(4)+lambda(4)=32B
+    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", 32);
+    // P1-A2: specialized sunshape pipelines
+    for (int i = 0; i < 3; i++) {
+        m_pipeForwardTyped[i]     = createPipe(m_spvForwardTyped[i],     "main", 0);
+        m_pipeBoltBackwardTyped[i] = createPipe(m_spvBoltBackwardTyped[i], "main", sizeof(uint32_t) * 4);
+    }
     m_pipeS95FindLevel  = createPipe(m_spvS95FindLevel,  "main", 0);
-    m_pipeS95LossBUF    = createPipe(m_spvS95LossBUF,    "main", 0);
+    m_pipeS95LossBUF    = createPipe(m_spvS95LossBUF,    "main", sizeof(float) * 4);  // S95LossPC
 
     m_boltPipelinesCreated = true;
 }
@@ -824,11 +839,14 @@ void BezierPipeline::boltBackwardPassCmd(VkCommandBuffer cmd) {
     m_app.fillBufferCmd(cmd, m_boltGradPartialTile, 0u);
     m_app.pipelineBarrier(cmd);
 
-    // Stage 1: optical backward → gradPartial
-    m_app.bindPipeline(cmd, m_pipeBoltBackward);
+    // Stage 1: optical backward → gradPartial (P1-A2: specialized by sunshape)
+    {
+        uint32_t st = static_cast<uint32_t>(m_cfg.sunType);
+        m_app.bindPipeline(cmd, m_pipeBoltBackwardTyped[st]);
+    }
     struct { uint32_t numBolts; float _pad[3]; } bwPC;
     bwPC.numBolts = n; bwPC._pad[0] = 0; bwPC._pad[1] = 0; bwPC._pad[2] = 0;
-    m_app.pushConstants(cmd, m_pipeBoltBackward.layout, &bwPC, sizeof(bwPC));
+    m_app.pushConstants(cmd, m_pipeBoltBackwardTyped[0].layout, &bwPC, sizeof(bwPC));
     m_app.dispatch(cmd, m_activePixelCount, tileCount, 1);  // A1: sparse culling
     m_app.pipelineBarrier(cmd);
 
@@ -864,8 +882,11 @@ void BezierPipeline::forwardRenderCmd(VkCommandBuffer cmd) {
     m_app.bindPipeline(cmd, m_pipeClear);
     m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
     m_app.pipelineBarrier(cmd);
-    // 2. Forward render
-    m_app.bindPipeline(cmd, m_pipeForward);
+    // 2. Forward render — P1-A2: use specialized pipeline by sunshape type
+    {
+        uint32_t st = static_cast<uint32_t>(m_cfg.sunType);
+        m_app.bindPipeline(cmd, m_pipeForwardTyped[st]);
+    }
     uint32_t tileCount = (m_totalSpp + 255) / 256;
     m_app.dispatch(cmd, tileCount, m_activePixelCount, 1);  // A1: sparse culling
     m_app.pipelineBarrier(cmd);
@@ -905,8 +926,13 @@ void BezierPipeline::computeS95FindLevelCmd(VkCommandBuffer cmd) {
 
 // GPU S95: sigmoid loss reading the level from m_s95State (no push constant,
 // no host round trip); also accumulates the scalar loss into m_lossAccum.
-void BezierPipeline::computeS95LossBUFCmd(VkCommandBuffer cmd) {
+// GPU S95: sigmoid loss reading the level from m_s95State (no push constant,
+// no host round trip); also accumulates the scalar loss into m_lossAccum.
+// L1: eRef/lambdaEff feed the efficiency term via push constants.
+void BezierPipeline::computeS95LossBUFCmd(VkCommandBuffer cmd, float eRef, float lambdaEff) {
     m_app.bindPipeline(cmd, m_pipeS95LossBUF);
+    float pc[4] = {eRef, lambdaEff, 0.0f, 0.0f};
+    m_app.pushConstants(cmd, m_pipeS95LossBUF.layout, pc, sizeof(pc));
     m_app.dispatch(cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
     m_app.pipelineBarrier(cmd);
 }
@@ -915,11 +941,21 @@ void BezierPipeline::boltAdamStep(uint32_t iteration) {
     uint32_t n = m_cfg.numBolts;
     float lr = m_cfg.minLearningRate +
                (m_cfg.learningRate - m_cfg.minLearningRate) * (1.0f - (float)iteration / m_cfg.iterations);
+    // P1-L4: compensate lr for tanh parameterization scaling.
+    // dL/deps = dL/dh * hMax * sech²(eps), so lr_eps = lr / hMax preserves
+    // the physical step magnitude. The sech² factor naturally softens near bounds.
+    float hMax = std::max(m_cfg.maxBoltStroke, 1e-6f);
+    float lrComp = lr / hMax;
+    // Layout: lr, beta1, beta2, eps, iterF, numBolts(uint), hMax, lambdaStroke = 32B
     float pc[8] = {
-        lr, m_cfg.beta1, m_cfg.beta2, m_cfg.adamEpsilon,
-        static_cast<float>(iteration), 0, 0, 0
+        lrComp, m_cfg.beta1, m_cfg.beta2, m_cfg.adamEpsilon,
+        0.0f,  // pc[4]=iterF placeholder (overwritten below)
+        0.0f,  // pc[5] placeholder (numBolts via memcpy)
+        hMax,
+        m_cfg.strokeRegularization
     };
-    std::memcpy(&pc[5], &n, sizeof(uint32_t));
+    pc[4] = static_cast<float>(iteration);
+    std::memcpy(&pc[5], &n, sizeof(uint32_t));  // numBolts at offset 20
 
     auto pass = m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeBoltAdam);
@@ -1216,7 +1252,18 @@ void BezierPipeline::fillSunParams(const std::array<float, 3> &sd, float *sunp) 
     sunp[6]=m_cfg.buieGamma; sunp[7]=0.0f;
     sunp[8]=m_cfg.sunShapeIntegral;
     sunp[9]=(float)(uint32_t)m_cfg.sunType;
-    sunp[10]=0.0f; sunp[11]=0.0f; sunp[12]=0.0f;
+    // P1-L3: iteration seed for Gaussian randomization (sunp[10] = iterationSeed)
+    sunp[10] = m_cfg.randomizeSeed ? (float)m_currentIteration + 1.0f : 0.0f;
+    // A1: per-ray pre-cull cosine (sunp[11] = cullCosCutoff)
+    float support = 0.0436f;
+    if (m_cfg.sunType == SunShapeType::PILLBOX) support = m_cfg.thetaMax;
+    else if (m_cfg.sunType == SunShapeType::GAUSSIAN) support = 5.0f * m_cfg.sigma;
+    float cullCos = -2.0f;
+    if (m_cfg.rayCull) {
+        float cutoff = support + m_cfg.rayCullMarginMrad * 1e-3f;
+        cullCos = std::cos(cutoff);
+    }
+    sunp[11] = cullCos; sunp[12] = 0.0f;
 }
 
 void BezierPipeline::updateUniforms(const std::array<float, 3> &sd, const std::array<float, 3> &hp,
@@ -1617,8 +1664,15 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         int patience = m_cfg.patience;
         auto tStart = std::chrono::steady_clock::now();
 
+        // A1/L1 feature flags (logged once)
+        fmt::print("  Ray pre-cull: {} (margin={:.1f} mrad), efficiency lambda={:.4f}\n",
+                   m_cfg.rayCull ? "ON" : "OFF", m_cfg.rayCullMarginMrad, m_cfg.lambdaEnergy);
+        // L1: per-sun reference energy captured at iteration 0 (GPU S95 path only)
+        std::vector<float> energyRef(trainDirs.size(), 0.0f);
+
         for (uint32_t iter = 0; iter < m_cfg.iterations; iter++) {
             auto tIter = std::chrono::steady_clock::now();
+            m_currentIteration = iter;  // P1-L3: per-iteration seed
             float totalLoss = 0.0f;
 
             // B-spline: map CP heights to bolt heights before forward pass
@@ -1638,6 +1692,13 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                 const char *e = getenv("BEZIER_S95_GPU");
                 return !(e && e[0] == '0');
             }();
+            if (m_cfg.lambdaEnergy > 0.0f && (!s_gpuS95 || useMse)) {
+                static bool warned = false;
+                if (!warned) {
+                    fmt::print("  WARNING: lambda_energy>0 requires the GPU S95 path and non-MSE loss; ignoring.\n");
+                    warned = true;
+                }
+            }
             for (size_t si = 0; si < trainDirs.size(); si++) {
                 const auto &sd = trainDirs[si];
                 // Host-visible UBOs (sun/receiver/heliostat) are persistent-mapped:
@@ -1659,6 +1720,8 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                     // GPU S95 path: forward + cooperative S95 level find + sigmoid
                     // loss + backward in ONE submit. The level stays on GPU
                     // (m_s95State) — no readFlux()/CPU binary search per sun.
+                    // L1: at iter 0 the efficiency term is off and the per-sun
+                    // reference energy is captured from m_s95State[2] afterwards.
                     auto pass = m_app.beginComputePassRaw();
                     if (si == 0) m_app.fillBufferCmd(pass.cmd, m_lossAccum, 0u);
                     m_app.updateBufferCmd(pass.cmd, m_sunBatchFlat, 0, 8 * sizeof(float), batch);  // A2
@@ -1667,9 +1730,16 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                     forwardRenderCmd(pass.cmd);
                     computeS95FindLevelCmd(pass.cmd);
                     clearFluxGradientCmd(pass.cmd);
-                    computeS95LossBUFCmd(pass.cmd);
+                    computeS95LossBUFCmd(pass.cmd,
+                        (iter == 0) ? 0.0f : energyRef[si],
+                        (iter == 0) ? 0.0f : m_cfg.lambdaEnergy);
                     boltBackwardPassCmd(pass.cmd);
                     m_app.submitAndWait(pass);
+                    if (iter == 0 && m_cfg.lambdaEnergy > 0.0f) {
+                        float st4[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        m_app.downloadBuffer(m_s95State, st4, sizeof(st4));
+                        energyRef[si] = st4[2];
+                    }
                     continue;
                 }
 
@@ -1874,6 +1944,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
     // AD gradient with S95 sigmoid loss (matching Taichi)
     for (uint32_t iter = 0; iter < m_cfg.iterations; iter++) {
         auto tIter = std::chrono::steady_clock::now();
+        m_currentIteration = iter;  // P1-L3
         float totalLoss = 0.0f;
         std::vector<float> z16(16, 0.0f);
         m_app.uploadBuffer(m_controlYGradient, z16.data(), 16 * sizeof(float));

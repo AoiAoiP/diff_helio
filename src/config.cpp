@@ -128,6 +128,15 @@ Config loadConfig(const std::string &path) {
     cfg.boltInitFile = extractString(json, "bolt_init_file", "");
     cfg.disableGravity = extractInt(json, "disable_gravity", 0) != 0;
 
+    cfg.maxBoltStroke = extractFloat(json, "max_bolt_stroke", 0.040f);
+    cfg.strokeRegularization = extractFloat(json, "stroke_regularization", 0.0f);
+    cfg.reflectionOnlyOptimization = extractInt(json, "reflection_only_optimization", 0) != 0;
+    cfg.randomizeSeed = extractInt(json, "randomize_seed", 0) != 0;
+
+    cfg.rayCull = extractInt(json, "ray_cull", 1) != 0;
+    cfg.rayCullMarginMrad = extractFloat(json, "ray_cull_margin_mrad", 8.0f);
+    cfg.lambdaEnergy = extractFloat(json, "lambda_energy", 0.0f);
+
     float csr = cfg.csr;
     cfg.buieThetaInner = 0.00465f;
     cfg.buieKappa = 0.9f * std::log(13.5f * csr) * std::pow(csr, -0.3f);

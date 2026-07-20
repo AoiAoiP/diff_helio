@@ -84,9 +84,9 @@ void finalizeFlux(uint3 tid : SV_DispatchThreadID) {
 }
 
 // ---- Forward render: Bezier-surface-normal-based reflection ----
-[shader("compute")]
-[numthreads(kFWGroupSize, 1, 1)]
-void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+// P1-A2: Generic implementation with compile-time sunshape specialization.
+// The SUNSHAPE_TYPE let-generic is constant-folded by Slang — zero runtime branch.
+void renderForwardTyped<let SUNSHAPE_TYPE : uint>(uint3 gid, uint3 gtid) {
     // A1: gid.y indexes the compacted active pixel list (sparse culling)
     uint lid = gtid.x, tileIdx = gid.x, pixelIdx = activePixelList[gid.y];
     if (pixelIdx >= totalPixels) return;
@@ -110,7 +110,6 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
     float dni      = getSunDni();
     float4 shapeP   = getSunShapeParams();
     float shapeInt  = getSunShapeIntegral();
-    float shapeType = getSunShapeType();
     float3 sunDir   = getSunDirection();
 
     uint wi = tileIdx * kFWGroupSize + lid;
@@ -138,7 +137,20 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
 
         // Facing check (horizontal component, receiver pixel must face heliostat)
         float dc = dot(normP, float3(dir.x, 0.0f, dir.z));
-        if (dc > 0.0f) {
+        bool rayAlive = dc > 0.0f;
+        // A1: per-ray angular pre-cull — cheap macro-normal reflection test.
+        // The full glass path (slope-error perturbations + refraction) can only
+        // rotate the outgoing ray by a few mrad, so if the macro reflection of
+        // the receiver->surface ray lands outside sun support + margin, the
+        // true energy contribution is exactly zero: skip Box-Muller, the whole
+        // 2-layer glass refraction and the sunshape evaluation. The cull cosine
+        // is cos(support + margin) from the SunParams UBO (< -1.5 disables).
+        float cullCos = getSunCullCos();
+        if (rayAlive && cullCos > -1.5f) {
+            float3 outApprox = reflect(dir, surfNrm);
+            rayAlive = dot(outApprox, normalize(sunDir)) >= cullCos;
+        }
+        if (rayAlive) {
             // Phase 1: Inline Box-Muller replaces gaussianPool lookup
             uint rayIndex = sp * totalPixels + pixelIdx;
             float g0, g1, g2, g3;
@@ -190,7 +202,8 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
                     InterlockedAdd(diagBuf[3], 1u);
                 }
 
-                float ssVal = computeSunshape(st, shapeP, shapeType);
+                // P1-A2: compile-time specialized — SUNSHAPE_TYPE is a let-generic
+                float ssVal = computeSunshapeTyped<SUNSHAPE_TYPE>(st, shapeP);
                 energy = dni * rat * ssVal / max(2.0f * kPi * shapeInt * float(totalSpp), kEpsilon);
                 // P2: mark this ray as valid
                 if (energy > 0.0f) {
@@ -213,7 +226,34 @@ void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
 
     float red = reduceFWSum(lid, energy);
     if (lid == 0u) {
-        // Per-tile partial sum, no atomic contention
+        // Per-tile partial sum, no atomic contribution
         fluxPartial[pixelIdx * kTileCount + tileIdx] = red;
     }
+}
+
+// P1-A2: backward-compatible runtime dispatch entry point (kept for existing code)
+[shader("compute")]
+[numthreads(kFWGroupSize, 1, 1)]
+void renderForward(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    uint st = uint(getSunShapeType());
+    if (st == kSunshapePillbox)      { renderForwardTyped<kSunshapePillbox>(gid, gtid); }
+    else if (st == kSunshapeGaussian) { renderForwardTyped<kSunshapeGaussian>(gid, gtid); }
+    else                              { renderForwardTyped<kSunshapeBuie>(gid, gtid); }
+}
+
+// P1-A2: compile-time specialized entry points (registered in CMakeLists.txt)
+[shader("compute")]
+[numthreads(kFWGroupSize, 1, 1)]
+void renderForwardBuie(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderForwardTyped<kSunshapeBuie>(gid, gtid);
+}
+[shader("compute")]
+[numthreads(kFWGroupSize, 1, 1)]
+void renderForwardPillbox(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderForwardTyped<kSunshapePillbox>(gid, gtid);
+}
+[shader("compute")]
+[numthreads(kFWGroupSize, 1, 1)]
+void renderForwardGaussian(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderForwardTyped<kSunshapeGaussian>(gid, gtid);
 }

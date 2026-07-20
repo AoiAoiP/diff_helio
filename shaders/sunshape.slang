@@ -42,10 +42,24 @@ public float computeSunshapeGaussian(float sunTheta, no_diff float4 shapeParams)
     return exp(-(sunTheta * sunTheta) / max(2.0f * sigma * sigma, 1.0e-6f));
 }
 
-// ---- Generic dispatch ----
+// ---- Generic dispatch (runtime branch, kept for backward compat) ----
 [Differentiable]
 public float computeSunshape(float sunTheta, float4 shapeParams, float type) {
     if (type > 1.5f)  return computeSunshapeGaussian(sunTheta, shapeParams);
     if (type > 0.5f)  return computeSunshapePillbox(sunTheta, shapeParams);
     return computeSunshapeBuie(sunTheta, shapeParams);
+}
+
+// ---- Compile-time specialized dispatch (zero branch, for hot path) ----
+// Use with Slang let-generic: computeSunshapeTyped<kSunshapeBuie>(...)
+// The if-else is resolved at Slang compile time (constant folding of let generic).
+[Differentiable]
+public float computeSunshapeTyped<let SUNSHAPE_TYPE : uint>(float sunTheta, no_diff float4 shapeParams) {
+    if (SUNSHAPE_TYPE == kSunshapeBuie) {
+        return computeSunshapeBuie(sunTheta, shapeParams);
+    }
+    if (SUNSHAPE_TYPE == kSunshapePillbox) {
+        return computeSunshapePillbox(sunTheta, shapeParams);
+    }
+    return computeSunshapeGaussian(sunTheta, shapeParams);
 }

@@ -99,14 +99,69 @@ float computePixelEnergyBolt(
     return dni * rat * ssVal / max(2.0f * kPi * shapeInt * float(totalSpp), kEpsilon);
 }
 
-// ---- Stage 1: renderBackwardBolt ----
+// P1-A2: compile-time specialized version of computePixelEnergyBolt
+[Differentiable]
+float computePixelEnergyBoltTyped<let SUNSHAPE_TYPE : uint>(
+    float y, float yu, float yv,
+    no_diff float u, no_diff float v,
+    no_diff float3 origin, no_diff float3 normP,
+    no_diff float3 perturb1, no_diff float3 perturb2,
+    no_diff float hx, no_diff float hz,
+    no_diff float3 macroN, no_diff OrthonormalBasis macroBasis,
+    no_diff float3 sunDir, no_diff float dni, no_diff float refIdx,
+    no_diff float4 shapeParams, no_diff float shapeInt, no_diff float shapeType,
+    no_diff float refArea)
+{
+    float3 posLocal = float3(hx, y, hz);
+    float3 tu = float3(getHeliostatSize().x, yu, 0.0f);
+    float3 tv = float3(0.0f, yv, getHeliostatSize().y);
+    float3 nrmLocal = -normalize(cross(tu, tv));
+
+    float3 he = basisToWorldPosition(macroBasis, posLocal, heliostatPosition);
+    float3 tn = basisToWorldDirection(macroBasis, nrmLocal);
+
+    float3 ray = he - origin;
+    float rl = max(length(ray), kEpsilon);
+    float3 dir = ray / rl;
+    if (dot(normP, float3(dir.x, 0.0f, dir.z)) <= 0.0f) return 0.0f;
+
+    // 2-layer glass optics (VERBATIM from backward.slang:115-142)
+    OrthonormalBasis surfBasis = computeBasis(tn);
+    float3 nor1 = basisToWorldDirection(surfBasis, perturb1);
+    float3 nor2 = basisToWorldDirection(surfBasis, perturb2);
+    float etaE = 1.0f / refIdx;
+    float etaX = refIdx;
+    float ndi = dot(nor1, dir);
+    float kEnter = 1.0f - etaE * etaE * (1.0f - ndi * ndi);
+    float3 d2 = (kEnter > 0.0f) ? normalize(etaE * dir - (etaE * ndi + sqrt(kEnter)) * nor1) : float3(0,0,0);
+    float3 outRG = float3(0,0,0);
+    if (length(d2) > kEpsilon) {
+        float3 d3 = normalize(reflect(d2, nor2));
+        float ndx = dot(d3, -nor1);
+        float kExit = 1.0f - etaX * etaX * (1.0f - ndx * ndx);
+        if (kExit > 0.0f) {
+            outRG = normalize(etaX * d3 - (etaX * ndx + sqrt(kExit)) * (-nor1));
+        }
+    }
+    if (length(outRG) <= kEpsilon) outRG = normalize(reflect(-dir, nor1));
+
+    float rat = max(0.0f, refArea * dot(normP, dir) * dot(nor1, -dir)
+                   / (rl * rl) * computeDistanceAttenuation(rl));
+    if (rat <= 0.0f) return 0.0f;
+
+    float ct = clamp(dot(outRG, normalize(sunDir)), -0.99999f, 0.99999f);
+    float st = (abs(ct - 1.0f) < kEpsilon) ? 0.0f : acos(ct);
+    // P1-A2: compile-time specialized sunshape dispatch
+    float ssVal = computeSunshapeTyped<SUNSHAPE_TYPE>(st, shapeParams);
+    return dni * rat * ssVal / max(2.0f * kPi * shapeInt * float(totalSpp), kEpsilon);
+}
+
+// ---- Stage 1: renderBackwardBolt (generic, P1-A2) ----
 // Groupshared: per-grid-point surface gradient accumulation within one group
 // totalGridPoints * 3 channels = 1024 * 3 = 3072 floats = 12288 bytes
 groupshared float gs_gridGrads[totalGridPoints][kSurfaceChannels];
 
-[shader("compute")]
-[numthreads(kBWGroupSize, 1, 1)]
-void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+void renderBackwardBoltTyped<let SUNSHAPE_TYPE : uint>(uint3 gid, uint3 gtid) {
     // A1: gid.x indexes the compacted active pixel list (sparse culling)
     uint lid = gtid.x, pixIdx = activePixelList[gid.x], spStart = gid.y * kBWGroupSize, spIdx = spStart + lid;
     if (pixIdx >= totalPixels) return;
@@ -160,7 +215,7 @@ void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         var d_yu = diffPair(yuGrid[myGridIdx], 0.0f);
         var d_yv = diffPair(yvGrid[myGridIdx], 0.0f);
 
-        bwd_diff(computePixelEnergyBolt)(d_y, d_yu, d_yv,
+        bwd_diff(computePixelEnergyBoltTyped<SUNSHAPE_TYPE>)(d_y, d_yu, d_yv,
             u, v, rsPos, rsNrm, pp1, pp2, hx, hz,
             macroN, macroBasis, sunDir, dni, refIdx,
             shapeParams, shapeInt, shapeType, refArea, dL);
@@ -185,6 +240,33 @@ void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
         InterlockedAdd(gradPartialTile[base + 1u], fixedYu, dummy);
         InterlockedAdd(gradPartialTile[base + 2u], fixedYv, dummy);
     }
+}
+
+// P1-A2: backward-compatible runtime dispatch entry point
+[shader("compute")]
+[numthreads(kBWGroupSize, 1, 1)]
+void renderBackwardBolt(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    uint st = uint(getSunShapeType());
+    if (st == kSunshapePillbox)      { renderBackwardBoltTyped<kSunshapePillbox>(gid, gtid); }
+    else if (st == kSunshapeGaussian) { renderBackwardBoltTyped<kSunshapeGaussian>(gid, gtid); }
+    else                              { renderBackwardBoltTyped<kSunshapeBuie>(gid, gtid); }
+}
+
+// P1-A2: compile-time specialized entry points
+[shader("compute")]
+[numthreads(kBWGroupSize, 1, 1)]
+void renderBackwardBoltBuie(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderBackwardBoltTyped<kSunshapeBuie>(gid, gtid);
+}
+[shader("compute")]
+[numthreads(kBWGroupSize, 1, 1)]
+void renderBackwardBoltPillbox(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderBackwardBoltTyped<kSunshapePillbox>(gid, gtid);
+}
+[shader("compute")]
+[numthreads(kBWGroupSize, 1, 1)]
+void renderBackwardBoltGaussian(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID) {
+    renderBackwardBoltTyped<kSunshapeGaussian>(gid, gtid);
 }
 
 // ---- Stage 1b: reduceSurfaceGradients ----

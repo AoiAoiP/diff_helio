@@ -90,7 +90,8 @@ private:
     void boltAdamStep(uint32_t iteration);
     // GPU S95: cooperative binary-search level find + buffer-fed sigmoid loss
     void computeS95FindLevelCmd(VkCommandBuffer cmd);
-    void computeS95LossBUFCmd(VkCommandBuffer cmd);
+    // L1: eRef/lambdaEff feed the efficiency term (lambda=0 -> plain S95 loss)
+    void computeS95LossBUFCmd(VkCommandBuffer cmd, float eRef, float lambdaEff);
 
     // Phase 2: Batched dispatch helpers (operate within existing command buffer)
     void boltForwardSurfaceCmd(VkCommandBuffer cmd, uint32_t batchCount);
@@ -125,6 +126,8 @@ private:
     std::vector<uint32_t> m_spvBoltSurface, m_spvBoltBackward, m_spvBoltBackwardReduce,
                          m_spvBoltProject, m_spvBoltClearSurface, m_spvBoltAdam,
                          m_spvS95FindLevel, m_spvS95LossBUF;
+    // P1-A2: specialized forward/backward SPIR-V (3 sunshape types each)
+    std::vector<uint32_t> m_spvForwardTyped[3], m_spvBoltBackwardTyped[3];
 
     // Pipelines (Bezier mode)
     ComputePipeline m_pipeBezier, m_pipeForward, m_pipeClear, m_pipeFinalize,
@@ -135,6 +138,8 @@ private:
     ComputePipeline m_pipeBoltSurface, m_pipeBoltBackward, m_pipeBoltBackwardReduce,
                     m_pipeBoltProject, m_pipeBoltClearSurface, m_pipeBoltAdam,
                     m_pipeS95FindLevel, m_pipeS95LossBUF;
+    // P1-A2: specialized forward/backward pipelines by sunshape type [Buie=0, Pillbox=1, Gaussian=2]
+    ComputePipeline m_pipeForwardTyped[3], m_pipeBoltBackwardTyped[3];
 
     // GPU resources (shared)
     GpuBuffer m_yGrid, m_nGrid, m_s95CountBuf, m_fluxPartial;  // Phase1: m_gaussianPool removed
@@ -175,6 +180,7 @@ private:
     // GPU S95 (bindings 52/53): level state + fixed-point scalar-loss accumulator
     GpuBuffer m_s95State, m_lossAccum;
     std::array<float,3> m_lastSunDir = {0,1,0};
+    uint32_t m_currentIteration = 0;  // P1-L3: per-iteration seed
     static constexpr uint32_t kSunBatchSize = 6;
 
     // Descriptor layouts (one shared Bezier layout, one shared bolt layout)

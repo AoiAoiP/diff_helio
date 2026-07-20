@@ -9,14 +9,14 @@
 ### 环境要求
 
 - Windows, Visual Studio 2022, CMake ≥ 3.20
-- Vulkan SDK ≥ 1.4.341.1
+- Vulkan SDK ≥ 1.4.350.0
 - Python ≥ 3.10 (numpy, scipy) — 仅数据准备
 - NVIDIA GPU（测试：RTX 4070 SUPER 12GB）
 
 ### 编译
 
 ```powershell
-$env:VULKAN_SDK = "C:\VulkanSDK\1.4.341.1"
+$env:VULKAN_SDK = "C:\VulkanSDK\1.4.350.0"
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
@@ -94,6 +94,42 @@ $$w(\mathbf{r}) = UY_{\text{grav}}^{\text{FEA}}(\theta) + \sum_{b=1}^{35} h_b \c
 ### 损失函数
 
 S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / \text{S95}_{\text{level}} - 1)\big)$，其中 S95 阈值为包含 95% 总能量的最低能流水平（GPU 端协作二分搜索，与 CPU 版语义一致，阈值不出 GPU）。
+
+可选效率项（`lambda_energy`，默认 0 关闭）：$L_{eff} = \lambda \cdot M \cdot E_{ref} / E$——ARCAim 式能量守卫，补 S95 损失的能量尺度盲区。M=接收面像素数，E 为当前总能量（复用 S95 二分查找已算的 `s95State[2]`，零额外 pass），E_ref 为 iter 0 逐太阳方向捕获的参考能量。
+
+---
+
+## P0/P1 优化（ARCAim 启发，2026-07-20）
+
+对照 diffspt/ARCAim 论文方法论的差距分析（`analysis/arcaim_comparison.md`）后实施的两批优化。**P0** 在独立分支验证后并入；**P1** 为参数化与特化改动。
+
+### P0（已验证，见 `analysis/p0_validation_report.md`）
+
+- **A1 逐光线角度预裁剪**（`ray_cull`，默认 ON；`ray_cull_margin_mrad` 默认 8）：进入 Box-Muller + 双层玻璃折射前，先用宏观面法向反射做余弦预测试，跳过真实贡献严格为零的光线。North300m 200-iter 全轨迹与基线**位精确一致**（max\|ΔLoss\|=0，最优螺栓逐字节相同），总时间 **−4.8%**。裁剪半径 = 日轮支持域 + margin（Buie 43.6 mrad + 8 mrad）；margin 调小是有损加速旋钮（margin=−30 时 ~3.2× 加速、S95 偏差 13%，仅供诊断）。
+- **L1 效率项**（`lambda_energy`，默认 0）：λ=0.1 时 loss 偏移实测 +28,342 ≈ 理论 λ·M·E_ref/E = +28,260，收敛正常，最终 S95 +0.65%（能量保持倾向的代价）。λ=0 时数学上逐位等价于纯 S95 路径。
+
+### P1
+
+- **A2 编译期太阳模型特化**：`renderForward` / `renderBackwardBolt` 各生成 Buie/Pillbox/Gaussian 三个特化入口（Slang let-generic 常量折叠，零运行时分支），按 `sun_type` 自动选择管线；原通用入口保留作兼容。无需配置。
+- **L4 tanh 有界参数化**（`max_bolt_stroke`，默认 0.040 m）：物理螺栓高度 $h = h_{max}\cdot\tanh(\varepsilon)$，Adam 在无界 $\varepsilon$ 空间更新，天然约束行程 \|h\| < h_max 且边界附近梯度软化。学习率自动补偿（`lr_ε = lr / h_max`），零点附近与旧直接参数化步长一致。**始终启用**；`stroke_regularization`（默认 0）可加 L_reg = λ·‖h‖² 行程正则。
+- **L3 逐迭代随机种子**（`randomize_seed`，默认 OFF）：ON 时每次迭代更换 Gaussian 采样种子（diffspt Algorithm 1 风格），降低冻结噪声造成的梯度偏差；OFF 时保持固定位流（旧行为，逐位复现）。
+- **A3 reflection-only 快速路径**：配置项 `reflection_only_optimization` 保留但**已停用**——实现后评估认为改变物理模型、与全折射结果不可比，代码固定走全折射路径（`common.slang` / `pipeline.cpp` 中标注 `was reflectionOnly`）。
+
+### 行为变化提示
+
+P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**位精确一致**，iter ≥1 起轨迹按设计偏离（零点邻域步长等价，随 \|h\| 增大渐变）。仓库中 `results_s95gpu` 等历史结果由 pre-P1 代码产生，逐位复现需回退到 `26f1d2e`。
+
+### 新增配置键
+
+| 键 | 默认 | 说明 |
+|------|:---:|------|
+| `ray_cull` | 1 | A1 逐光线预裁剪开关（0 = 旧路径，位精确） |
+| `ray_cull_margin_mrad` | 8.0 | 裁剪余量（mrad），负值为有损诊断模式 |
+| `lambda_energy` | 0.0 | L1 效率项权重 λ |
+| `max_bolt_stroke` | 0.040 | L4 tanh 行程界 h_max（m） |
+| `stroke_regularization` | 0.0 | L4 行程正则权重 |
+| `randomize_seed` | 0 | L3 逐迭代换种（1 = ON） |
+| `reflection_only_optimization` | 0 | 已停用（解析但无效） |
 
 ---
 
@@ -194,9 +230,10 @@ S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / 
 │   └── bolt_layouts/              螺栓布局定义 (7×5, 6×6)
 ├── data/                          太阳方向、椭圆参数
 ├── data_proxy/                    预生成 TPS 数据 + 20-bin 重力
+├── data_proxy_old/                归档旧数据（原 data_ansys_20bin、data_vsm_mnvn_tik32）
 ├── results_4mirror_200iter/      四面镜 200-iter 优化结果
 ├── docs/                          补充文档（TVCG 差距分析等）
-└── analysis/                      历史分析文档
+└── analysis/                      分析与验证报告（ARCAim 对比、P0 验证等）
 ```
 
 ---
@@ -226,4 +263,7 @@ S95 sigmoid 损失：$L = \sum_{\text{pixel}} \sigma\big(6 \cdot (\text{flux} / 
 | `CLAUDE.md` | 开发者参考：编译、架构、方法论、参数速查 |
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验完整报告 |
 | `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `analysis/arcaim_comparison.md` | ARCAim (diffspt) 方法论对比与本项目 P0/P1/P2 优化清单 |
+| `analysis/p0_validation_report.md` | P0（A1 预裁剪 + L1 效率项）位精确一致性与时空开销验证 |
+| `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证（位精确性、L1、参考运行、计时 A/B） |
 | `analysis/` | 历史分析文档 |

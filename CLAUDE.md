@@ -5,7 +5,7 @@
 ### 本机编译
 
 ```powershell
-$env:VULKAN_SDK = "C:\VulkanSDK\1.4.341.1"
+$env:VULKAN_SDK = "C:\VulkanSDK\1.4.350.0"
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
@@ -60,7 +60,7 @@ python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x
 python scripts/run_fea_validation.py --result-dir results_north_300iter --angles 0 29.5 58.5
 ```
 
-Shader 由 Slang 编译，入口点映射见 `CMakeLists.txt:68-87`。每个 entry point 生成独立 `.spv` 文件。运行时 SPIR-V 文件需在 `./shaders/` 下（cmake 自动复制到 exe 同级目录）。
+Shader 由 Slang 编译，入口点映射见 `CMakeLists.txt:69-97`。每个 entry point 生成独立 `.spv` 文件。运行时 SPIR-V 文件需在 `./shaders/` 下（cmake 自动复制到 exe 同级目录）。
 
 ---
 
@@ -87,14 +87,14 @@ boltForwardSurface (力学正向) → forwardRender (光追) → computeS95FindL
 |----------|--------|------|------|
 | `(1,1,1)` | `computeBoltSurface` | 1024 threads | 力学正向 |
 | `(1,1,1)` | `clearFlux` | 7850 threads | 清零能流 |
-| `(kTileCount, ~3950, 1)` | `renderForward` | 稀疏像素 | 光追正向 |
+| `(kTileCount, ~3950, 1)` | `renderForward{Buie,Pillbox,Gaussian}` | 稀疏像素 | 光追正向（A2 特化，按 sun_type 选管线；内含 A1 逐光线预裁剪） |
 | `(1,1,1)` | `finalizeFlux` | 7850 threads | 归一化 |
 | `(1,1,1)` | `computeS95FindLevel` | 256 threads × 1 group | GPU 协作二分查找 S95 阈值 |
-| `(10,4,1)` | `computeS95LossBUF` | 7850 threads | 损失梯度 + 标量 loss 累加 |
-| `(~3950, kTileCount, 1)` | `renderBackwardBolt` | ~15800 groups | 光追反向 |
+| `(10,4,1)` | `computeS95LossBUF` | 7850 threads | 损失梯度 + 标量 loss 累加（L1 效率项经 16B push constants） |
+| `(~3950, kTileCount, 1)` | `renderBackwardBolt{Buie,Pillbox,Gaussian}` | ~15800 groups | 光追反向（A2 特化） |
 | `(1,1,1)` | `reduceSurfaceGradients` | 1 group | 跨 group 归约 |
 | `(1,1,1)` | `projectBoltGradients` | 35 threads | 投影到螺栓梯度 |
-| `(1,1,1)` | `boltAdamStep` | 35 threads | Adam 更新（每迭代一次） |
+| `(1,1,1)` | `boltAdamStep` | 35 threads | Adam 更新（每迭代一次，L4 tanh 参数化） |
 
 ### 关键源文件
 
@@ -102,14 +102,29 @@ boltForwardSurface (力学正向) → forwardRender (光追) → computeS95FindL
 |------|------|
 | `src/pipeline.cpp` | 优化循环、Vulkan dispatch、S95、梯度反传、Adam |
 | `shaders/bolt_forward.slang` | 力学正向：影响函数 + 重力叠加 → yGrid/nGrid |
-| `shaders/bolt_backward.slang` | 三阶段反向：bwd_diff → reduceSurfaceGradients → projectBoltGradients |
+| `shaders/bolt_backward.slang` | 三阶段反向：bwd_diff → reduceSurfaceGradients → projectBoltGradients（含 A2 特化入口） |
 | `shaders/bolt_common.slang` | 影响函数求值、20-bin 重力插值 `sampleGravityUY` |
-| `shaders/s95_gpu.slang` | GPU 端 S95：协作二分查找阈值 + buffer 版 sigmoid 损失 |
-| `shaders/forward.slang` | 光线追踪、双折射玻璃、Buie 太阳模型 |
+| `shaders/s95_gpu.slang` | GPU 端 S95：协作二分查找阈值 + buffer 版 sigmoid 损失（含 L1 效率项） |
+| `shaders/forward.slang` | 光线追踪、双折射玻璃、Buie 太阳模型（A1 逐光线预裁剪 + A2 特化入口） |
 | `shaders/loss.slang` | S95 sigmoid 损失（push-constant 版，Bezier/MSE 路径用）、GPU 直方图 |
-| `shaders/bolt_optimizer.slang` | Adam 参数更新 |
+| `shaders/bolt_optimizer.slang` | Adam 参数更新（L4：无界 ε 空间更新，h = h_max·tanh(ε)） |
 | `shaders/common.slang` | UBO、坐标变换、Wang hash |
 | `src/vulkan_app.h/cpp` | Vulkan 封装：buffer/texture/cmd/pipeline |
+
+### P0/P1 优化实现要点（2026-07-20）
+
+对照 `analysis/arcaim_comparison.md` 的优先级清单实施。设计/验证细节见 `analysis/p0_validation_report.md`（P0）与 README「P0/P1 优化」节（总览）。
+
+**UBO 槽位约定（SunParams，勿动顺序）**：`sunp[9]=type`，`sunp[10]=iterationSeed`（L3），`sunp[11]=cullCosCutoff`（A1），`sunp[12]` 保留。
+
+- **A1 逐光线预裁剪**（`ray_cull`，默认 ON）：`forward.slang` 在 Box-Muller 前做宏观法向反射余弦测试 `dot(reflect(dir, surfNrm), sunDir) >= cullCos`；cutoff = cos(日轮支持域 + `ray_cull_margin_mrad`)，支持域 Buie=0.0436 rad / pillbox=θ_max / Gaussian=5σ。`ray_cull=0` → cullCos=−2 完全旁路（位精确回退）。North300m 200-iter 与基线位精确一致，总时间 −4.8%。
+- **L1 效率项**（`lambda_energy`，默认 0）：`s95_gpu.slang` 的 `S95LossPC{eRef, lambdaEff}` 16B push constants；E=`s95State[2]`（level find 已算），E_ref 在 iter 0 逐太阳方向捕获（每方向一次 16B 回读）。λ=0 逐位退化为纯 S95；λ=0.1 实测 loss 偏移 +28,342 ≈ 理论 +28,260。仅 GPU-S95 非 MSE 路径生效（否则打印 WARNING 并忽略）。
+- **A2 编译期特化**：`renderForwardTyped<let SUNSHAPE_TYPE>` / `renderBackwardBoltTyped` 由 Slang 常量折叠；C++ 建 3 条管线按 `m_cfg.sunType` 分派（`m_pipeForwardTyped[3]` / `m_pipeBoltBackwardTyped[3]`）。通用入口 `renderForward` / `renderBackwardBolt` 保留编译但运行时不使用。
+- **L3 逐迭代种子**（`randomize_seed`，默认 OFF）：ON 时 `sunp[10] = m_currentIteration + 1`，`generateGaussianSamples` 混入逐迭代种子；OFF（=0.0）回退 `kSamplingSeed` 固定流（位精确旧行为）。
+- **L4 tanh 有界参数化**（始终启用）：Adam 在 ε 空间更新，`h = h_max·tanh(ε)`（`max_bolt_stroke` 默认 0.040 m）。每迭代从物理 h 经 `atanh(clamp(h/h_max, ±0.999))` 恢复 ε，链式因子 `dh/dε = h_max(1−tanh²ε)`，lr 补偿 `lr_ε = lr/h_max`（零点附近与旧直接参数化步长一致）。`stroke_regularization` > 0 时加 2λ·h·dh/dε 梯度。**行为变化**：iter 0 与旧代码位精确一致，iter ≥1 轨迹按设计偏离；逐位复现历史结果需回退 `26f1d2e`。
+- **A3 reflection-only**：已停用。配置项仍解析（`reflection_only_optimization`）但光路固定全折射（`pipeline.cpp` `helio[7]=0.0f // always refraction`）。
+
+新增/变更配置键：`ray_cull`(1)、`ray_cull_margin_mrad`(8.0)、`lambda_energy`(0.0)、`max_bolt_stroke`(0.040)、`stroke_regularization`(0.0)、`randomize_seed`(0)、`reflection_only_optimization`(0，停用)。
 
 ---
 
@@ -238,6 +253,9 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `validation/fea_comparison/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（2026-07-17） |
 | `validation/fea_comparison/62deg_comparison.png` | 62° GUI vs Python 重力对比图 |
 | `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
+| `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
+| `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
 | `analysis/` | 历史分析文档 |
 
 ### 最新四面镜结果（2026-07-17, data_proxy 修正后）

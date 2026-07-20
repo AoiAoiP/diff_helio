@@ -118,17 +118,38 @@ void computeS95FindLevel(uint3 gtid : SV_GroupThreadID) {
 // S95 sigmoid loss with the level read from the GPU buffer (no host round
 // trip). Writes dL/dflux per pixel (same formula as computeS95Loss) and
 // accumulates the scalar loss as fixed-point x1e3 for per-iteration readback.
+//
+// L1 efficiency term (ARCAim-style energy guard):
+//   L_eff = lambda * M * E_ref / E,  dL_eff/df_i = -lambda * M * E_ref / E^2
+// where M = receiver pixel count (keeps lambda ~ O(1) against the sigmoid
+// sum), E = s95State[2] (total flux, already computed by the level find) and
+// E_ref the per-sun reference captured at iteration 0. lambda = 0 reduces to
+// the plain S95 sigmoid loss bit-exactly (+0.0f is exact in IEEE-754).
+struct S95LossPC {
+    float eRef;
+    float lambdaEff;
+    float _pad0;
+    float _pad1;
+};
+[[vk::push_constant]] S95LossPC lossPC;
+
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void computeS95LossBUF(uint3 tid : SV_DispatchThreadID, uint3 gtid : SV_GroupThreadID) {
     uint2 dims = getReceiverDims();
     float lv = max(s95State[0], kEpsilon);
+    float E = max(s95State[2], kEpsilon);
+    bool useEff = lossPC.lambdaEff != 0.0f;
+    float npix = float(dims.x * dims.y);
+    float effGrad  = useEff ? -lossPC.lambdaEff * npix * lossPC.eRef / (E * E) : 0.0f;
+    float effShare = useEff ?  lossPC.lambdaEff * lossPC.eRef / E : 0.0f;  // per-pixel share of L_eff
     float s = 0.0f;
     if (tid.x < dims.x && tid.y < dims.y) {
         float flux = renderedFlux[tid.xy];
         float nf = flux / lv;
         s = 1.0f / (1.0f + exp(-6.0f * (nf - 1.0f)));
-        fluxGradient[tid.xy] = 6.0f * s * (1.0f - s) / lv;
+        fluxGradient[tid.xy] = 6.0f * s * (1.0f - s) / lv + effGrad;
+        s += effShare;
     }
     // 16x16 = 256 threads == kS95GroupSize; reduce and accumulate globally
     uint lid = gtid.y * 16u + gtid.x;
