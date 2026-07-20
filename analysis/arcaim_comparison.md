@@ -1,6 +1,9 @@
 # ARCAim (diffspt) 方法论对比分析
 
-**日期**: 2026-07-20
+**日期**: 2026-07-20（同日回写 P0+P1 实施结果，见 §2.1 状态表、各 L/A 节「实施结果」块与 §2.5/§3 修订结论）
+
+> **2026-07-20 实施回执**：本文 §2 的 P0 两项（A1、L1）与 P1 四项（A2、A3、L3、L4）已全部落地并验证，验证细节见 `analysis/p0_validation_report.md`（P0 隔离验证）与 `analysis/p0p1_merge_validation.md`（合并树端到端验证）。**两处预估被实测修正**：A1 无损裁剪加速为 ~5%（非预估的 5~20×），A2 编译期特化性能中性（非预估的 1.5~2×）——修正原因见对应小节。剩余开放项以 A5（采样/网格削减）为最大加速杠杆。
+
 **对比对象**: `L:\Code\diffspt-main`（ARCAim：全镜场瞄准点可微优化）vs 本项目（镜面面型物理可实现可微优化）
 **参考材料**: 论文《ARCAim: Hardware-accelerated differentiable ray tracing for adaptive heliostat aiming》（Visual Informatics 2026, DOI: 10.1016/j.visinf.2026.100349）、diffspt 源码、`diffspt-main/experiment_report.md`
 
@@ -94,11 +97,13 @@ dLoss *= max(lossParams.referenceFluxSum, 1.0f);
 | 免原子/定点归约 | ✅ 已做（gradPartialTile 12 KB） |
 | command buffer 合批 | ✅ 已做（每 sun 单次 submit） |
 | 可见性位缓存、反向零遮挡查询 | ✅ 已做（rayValidity bitmask，`shaders/bolt_backward.slang:149`） |
-| 逐光线协方差裁剪 | ❌ **未做（最大缺口）** |
-| 编译期特化 | ❌ 未做（sun_type 等运行时分支） |
-| 低 spp + 滤波降噪 | ❌ 未做（仍是 32×32=1024 确定性网格积分） |
-| 有界参数化约束 | ❌ 未做（螺栓行程无约束） |
-| 效率/能量损失项 | ❌ 未做（`energy_target` 是配置里的死字段，src 中无任何引用） |
+| 逐光线协方差裁剪 | ✅ **已做（2026-07-20，A1 宏观法向反射预裁剪）**——无损收益仅 ~5%，见 A1 实施结果 |
+| 编译期特化 | ✅ 已做（2026-07-20，A2：forward/bolt-backward 各 3 个日轮特化入口）——性能中性，见 A2 实施结果 |
+| 低 spp + 滤波降噪 | ❌ 未做（仍是 32×32=1024 确定性网格积分）——A1 实测后成为**最大剩余加速杠杆**（A5） |
+| 有界参数化约束 | ✅ 已做（2026-07-20，L4：h = h_max·tanh(ε)，始终启用） |
+| 效率/能量损失项 | ✅ 已做（2026-07-20，L1：λ·M·E_ref/E，`lambda_energy` 默认 0） |
+| 每迭代换种（Algorithm 1） | ✅ 已做（2026-07-20，L3：`randomize_seed`，默认 OFF） |
+| reflection-only 快速路径 | ⚠️ 试过放弃（2026-07-20，A3：改变物理、与全折射不可比，代码固定全折射） |
 
 ## 2.2 Loss 设计空间（6 条，按价值排序）
 
@@ -114,6 +119,8 @@ L = S95_loss / (M·σ(6))  +  λ · E_ref / E_actual
 
 第一项归一化为"超阈值像素占比"（无量纲 ∈[0,1]），E_ref 用零初始化面的总通量，E_actual 为当前总通量（GPU 上 finalizeFlux 已有，归约一个 sum 几乎免费）。λ 作为可解释的运行点参数扫描（ARCAim 用 λ∈[0,1.6]），可直接为论文多一张 Pareto 图。
 
+> **实施结果（2026-07-20，已并入 master）**：已实现为 `L = Σσ + λ·M·E_ref/E`（未做 sigmoid 和的归一化，改用 M=接收面像素数 7850 把 λ 保持在 O(1)；λ=0 时逐位退化为纯 S95）。E 复用 GPU S95 二分查找已算出的 `s95State[2]`，零额外归约 pass；E_ref 在 iter 0 逐太阳方向捕获（每方向一次 16 B 回读）。验证（North300m，36 suns，200 iter）：λ=0.1 时 loss 偏移实测 **+28,342 ≈ 理论 +28,260**（差 0.3%，源于 E 逐太阳方向略有差异），收敛正常，最终 S95 50.27 vs 50.10（+0.65% 的能量保持代价），螺栓解 RMS 偏移 0.49 mm。配置键 `lambda_energy`（默认 0），仅 GPU-S95 非 MSE 路径生效。
+
 ### L2. 梯度只在 sigmoid 阈值带内非零 → 借鉴"平滑三件套"，但需谨慎
 
 S95 sigmoid 损失的本质缺陷：只有 f ≈ level 附近的像素 |σ′| 显著非零，深斑内和远场外像素梯度≈0。diffspt 的解法是三件套：通量高斯滤波（σ=4.9px）+ dL/dF 同核伴随滤波 + 截断处替代梯度。本项目 Buie 日轮天然光滑（不需要第三件），但前两件可以考虑——**然而有本项目自己的教训作约束**：GPU 直方图 1.5 W/m² 偏差就导致 sigmoid 饱和（`optimization_plan.md` Phase 3 回退），说明 S95 对通量扰动极度敏感，滤波引入的偏差必须先量化。
@@ -126,6 +133,8 @@ S95 sigmoid 损失的本质缺陷：只有 f ≈ level 附近的像素 |σ′| �
 
 建议：加一个 per-iteration seed（UBO 传 iteration 号混入 `random01` 的 seed 参数），然后做对比：同一组最终螺栓，用多个不同 seed 重算 S95 取平均——如果换 seed 后 S95 变差，说明当前结果确实存在噪声过拟合。对论文的稳健性论证也是加分项。
 
+> **实施结果（2026-07-20，已并入 master）**：已实现为配置键 `randomize_seed`（默认 OFF）。SunParams UBO `sunp[10]=iterationSeed`，ON 时每迭代传 `m_currentIteration+1`，`generateGaussianSamples` 混入逐迭代种子；OFF（=0.0）回退 `kSamplingSeed` 固定流（旧行为，逐位复现，冒烟验证 iter-0/1/2 与基线一致）。**多种子重评实验（上文建议的稳健性 A/B）尚未做**——机制已就位，实验留待论文补充材料阶段执行。
+
 ### L4. 物理可实现约束未参数化 → tanh 有界参数化 + 行程正则
 
 本项目的卖点是"物理可实现优化"，但目前：螺栓行程**无任何硬约束**（`shaders/bolt_optimizer.slang` 中无 clamp），33~37 mm 的行程是优化自然停下来的，不是被限制的；也没有行程/斜率正则项。ARCAim 式 (9) 的 tanh 参数化可直接搬用：
@@ -135,6 +144,8 @@ h_b = h_max · tanh(ε_b)
 ```
 
 边界内建于参数化，无需投影、梯度在边界处自然软化。再叠加一个小的行程正则 λ_h·||h||²，就能把"S95 vs 执行器成本"做成显式 Pareto 权衡——这正是 ARCAim 用单一 λ 管理"形状 vs 能量"的同一哲学，对"物理可实现"的叙事是强化而非旁枝。
+
+> **实施结果（2026-07-20，已并入 master）**：已实现且**始终启用**（无可关开关）。Adam 在无界 ε 空间更新，每迭代从物理 h 经 `atanh(clamp(h/h_max, ±0.999))` 恢复 ε，链式因子 `dh/dε = h_max(1−tanh²ε)`，lr 自动补偿 `lr_ε = lr/h_max` 使零点附近物理步长与旧直接参数化一致。`max_bolt_stroke` 默认 0.040 m（恰覆盖历史最优解的 ~36 mm 行程）；`stroke_regularization`（默认 0）对应 λ_h·‖h‖² 正则。验证（North300m 200 iter）：iter 0 与 pre-P1 **位精确一致**，iter ≥1 轨迹按设计偏离；最终 Best S95 = **50.0476** vs pre-P1 参考 50.0387（差 0.02%），max stroke 35.7 mm——约束未牺牲最优质量，同时把 |h| < h_max 从"自然停下"变为内建保证。
 
 ### L5. 多工况加权
 
@@ -152,13 +163,25 @@ S95 是非平滑序统计量类指标，前期梯度信号稀疏。可借鉴 ARC
 
 曲面使精确协方差椭圆更难算，但有更朴素的版本：**先用宏观曲面法向（不含玻璃、不含斜率扰动）算一次 reflect，若反射方向与日轮中心角距 > θ_max + k·(斜率误差 + 玻璃偏折余量)，直接 skip**。玻璃偏折上界可离线估一个保守值。`analysis/diffspt_performance_optimization_plan.md` 估计可裁 80~95% 的 (pixel, sample) 对——**前向 5~20× 的加速全部来自这里**，反向同理（validity 缓存已帮反向跳过无效光路的 AD，但前向找出这些无效光路本身仍花了全价）。这是唯一一个量级级的剩余机会。
 
+> **实施结果（2026-07-20，已并入 master）——预估被实测大幅修正**：已实现上述朴素版（`ray_cull` 默认 ON，`ray_cull_margin_mrad` 默认 8；cutoff 余弦经 SunParams `sunp[11]` 传入，`ray_cull=0` 逐位回退）。**无损口径下加速仅 −4.8%**（North300m 200 iter：311.7→296.8 s），与预估的 5~20× 相差两个量级。物理归因：
+>
+> 1. **Buie 环日支持域大**：能量支持延伸至 43.6 mrad（CSR=0.01），无损裁剪半径必须 ≥ 43.6+8 = 51.6 mrad；
+> 2. **镜子张角大**：12.84 m 宽镜在 300 m 处对每个接收像素张角 ~43 mrad——绝大多数像素的"孔径反射锥"都与这个大半径支持域相交，严格零贡献的光线天然很少；
+> 3. **diffspt 的裁剪比本项目有效的原因**：平面镜无面型展宽，协方差裁剪按镜子实际张角收紧，且远处像素先被 tile 级 footprint 剔除（本项目已由 activePixelList 等价完成）。
+>
+> 机制本身有效：margin=−30（cutoff 13.6 mrad，**有损**）时 ~70% 光线被裁、30-iter 加速 ~3.2×，代价是环日尾部能量丢失致 S95 偏差 +13%。**margin 因此成为"无损—速度"旋钮**：margin≥8 位精确无损（200-iter 全轨迹 max\|ΔLoss\|=0、最优螺栓逐字节相同），更小的 margin 可作优化内循环加速手段（终验回 margin≥8）。结论修正：在本几何+Buie 日轮下，无损逐光线裁剪收益上限就是百分之几；量级级加速必须转向采样削减（A5 网格课程/低 spp + L2 滤波）或有损小 margin。A1 保留价值：零成本、零风险、位精确，且对 Gaussian/pillbox 小支持域日轮或更远镜距收益自动上升。
+
 ### A2. [P1] 编译期特化
 
 `sun_type`、fresnel 路径、glass 开关等经 uniform 运行时分支（`shaders/forward.slang:112` `getSunShapeType()` 后的分派）。按 diffspt 的 Slang 泛型模式（`planar.slang:47`），为 (sun_type × reflection 模式 × grid_size) 预编译少数特化，消除热循环分支，预期 1.5~2×。
 
+> **实施结果（2026-07-20，已并入 master）——收益未兑现，性能中性**：已实现日轮维度特化（`renderForward{Buie,Pillbox,Gaussian}` + `renderBackwardBolt{Buie,Pillbox,Gaussian}` 六个 Slang let-generic 入口，常量折叠零运行时分支；C++ 按 `m_cfg.sunType` 分派 `m_pipeForwardTyped[3]`/`m_pipeBoltBackwardTyped[3]`，通用入口保留作兼容）。背靠背 A/B（30-iter 交替各 2 次：50.7/45.9 s vs P0 分支 48.5/54.0 s）差在运行间噪声内——kernel 是访存/占用率受限而非分支受限，`if (type>1.5f)` 一类的 uniform 分支在现代 GPU 上本来就近乎免费。特化代码保留（无害且对更重的日轮求值路径仍省指令），但**"fresnel 路径 × glass 开关"维度的进一步特化不再值得做**。
+
 ### A3. [P1] reflection-only 快速路径（带保真度权衡）
 
 双层玻璃折射是前向单光线成本的大头。diffspt 的 `REFLECTION_ONLY` 模板参数在只关心能量分布时给 3~5×。本项目的物理论述里双层玻璃可能是卖点之一，建议做成配置开关：**优化内循环用 reflection-only，最终 S95 评估与论文数据用全模型**——先量化两者 S95 偏差再决定。
+
+> **实施结果（2026-07-20，已放弃）**：实现过程中判定此路不通——reflection-only 改变物理模型本身，其优化轨迹与全折射结果不可比，"内循环省时间、终验回全模型"的设想在两套物理间没有可信的过渡保证（与 A1 的 margin 旋钮不同，后者有明确的能量支持域界限）。代码固定走全折射（`pipeline.cpp` `helio[7]=0.0f // always refraction`），配置键 `reflection_only_optimization` 仍解析但无效，保留仅为配置兼容。
 
 ### A4. [P1] 多 sun 合批 + vkCmdUpdateBuffer
 
@@ -178,26 +201,26 @@ diffspt 用 raytracer（高保真）+ covariance（解析高斯散射，106 s→
 - **2^20 Sobol 大池**：本项目已删掉 1.5 GB 池改内联 Box-Muller，这是对的——采样点是确定性网格，只需要高斯扰动，hash 生成比池读取更省。
 - **27k 批量 dispatch 维度**：问题规模不同，本项目的瓶颈在单镜 1024 采样内层，不在 dispatch 次数。
 
-## 2.5 汇总优先级
+## 2.5 汇总优先级（2026-07-20 回写实施状态）
 
-| 优先级 | 项 | 预期收益 | 风险/成本 |
+| 状态 | 项 | 预期收益 → 实测结果 | 风险/成本 |
 |---|---|---|---|
-| P0 | A1 逐光线角度预裁剪 | 前向+反向 3~10× | 中（需保守余量验证 S95 不变） |
-| P0 | L1 效率项（λ/η） | 防能量牺牲解；论文多一张 Pareto 图 | 低（GPU 上加一次归约） |
-| P1 | L4 tanh 行程约束 + 行程正则 | 强化"物理可实现"叙事 | 低 |
-| P1 | A2 编译期特化 | 1.5~2× | 低 |
-| P1 | L3 每迭代换种 + 多种子验证 | 稳健性论证（论文向） | 低，需 A/B |
-| P1 | A3 reflection-only 开关 | 3~5× 前向（内循环） | 需先量化保真偏差 |
-| P2 | A4 多 sun 合批 + cmdUpdateBuffer | 15~25% | 中 |
-| P2 | L2 dL/dF 反向滤波 | 收敛域加宽 | 中（S95 敏感教训） |
-| P2 | A5 网格课程 16²→32² | 30~40% 总时间 | 低 |
-| P3 | L5 年 DNI 加权 / L6 warm-start | 物理意义/迭代数 | 低 |
+| ✅ 已实施 | A1 逐光线角度预裁剪 | 前向+反向 3~10× → **无损 −4.8%**（margin 旋钮：−30 时有损 ~3.2×） | 低（位精确验证通过） |
+| ✅ 已实施 | L1 效率项（λ/η） | 防能量牺牲解；Pareto 图 → 机制精确生效（+28,342 ≈ 理论 +28,260），λ=0.1 代价 +0.65% S95 | 低（λ=0 逐位回退） |
+| ✅ 已实施 | L4 tanh 行程约束 + 行程正则 | 强化"物理可实现"叙事 → 最优质量无损（50.0476 vs 50.0387），行程内建 <40 mm | 低（轨迹变化已文档化） |
+| ✅ 已实施 | A2 编译期特化 | 1.5~2× → **性能中性**（分支非瓶颈）；更多维度特化不再值得做 | 低 |
+| ✅ 已实施 | L3 每迭代换种 | 稳健性论证 → 机制就位（`randomize_seed`），多种子重评实验待做 | 低 |
+| ⚠️ 已放弃 | A3 reflection-only 开关 | 3~5× 前向 → 改变物理、与全折射不可比，固定全折射 | — |
+| 开放（原 P2） | A4 多 sun 合批 + cmdUpdateBuffer | 15~25% → **优先级下调**：A1 未大幅降低 GPU 计算量，dispatch 开销占比未如预期上升 | 中 |
+| 开放（升 P1） | A5 网格课程 16²→32² / 低 spp + 滤波 | 30~40% 总时间 → **A1 实测后成为最大剩余加速杠杆**：无损裁剪已证收益上限为百分之几，量级加速只能来自采样削减 | 低 |
+| 开放（原 P2） | L2 dL/dF 反向滤波 | 收敛域加宽 → 与 A5 配套（低 spp 降噪），S95 敏感教训仍适用 | 中 |
+| 开放（P3） | L5 年 DNI 加权 / L6 warm-start / A6 β1 调整 | 物理意义/迭代数/抗噪 | 低 |
 
 ---
 
-## 三、一句话总结
+## 三、一句话总结（2026-07-20 修订）
 
-**加速上最大剩余杠杆是逐光线零贡献裁剪（A1）**——diffspt 的 43× 吞吐优势有相当部分来自同类机制；**loss 上最值得移植的是 ARCAim 式 (8) 的"无量纲形状项 + λ/η 效率项"双项结构（L1）和 tanh 有界参数化（L4）**——前者补上 S95 的能量盲区，后者把"物理可实现"从结果属性变成内建约束。
+**P0+P1 已落地**：A1 无损预裁剪（−4.8%，位精确）+ L1 效率项（λ/η 机制精确生效）+ L4 tanh 行程约束（最优质量无损）+ A2 特化（中性保留）+ L3 换种机制（待用）。**实测推翻了两个预判**：逐光线无损裁剪在本几何+Buie 日轮下收益上限只有百分之几（diffspt 的 43× 优势主要来自其场景本身可裁比例高，不可移植），编译期特化亦几乎无收益——**最大剩余加速杠杆是采样削减（A5 网格课程/低 spp + L2 伴随滤波）**；**loss 侧最值得继续的是 L1 的 λ 扫描 Pareto 实验与 L3 的多种子稳健性验证**，二者机制均已就位、只欠实验。
 
 ---
 
@@ -212,4 +235,6 @@ diffspt 用 raytracer（高保真）+ covariance（解析高斯散射，106 s→
 | `L:\Code\diffspt-main\diffspt\core\metrics.cpp:150-176` | 形状先验 loss CPU 参考实现 |
 | `analysis/diffspt_performance_optimization_plan.md` | 本项目此前的 diffspt 对比加速方案 |
 | `analysis/remaining_optimization_opportunities.md` | 本项目剩余优化项（B1~B5） |
+| `analysis/p0_validation_report.md` | P0（A1+L1）隔离验证：位精确一致性、margin 诊断、时空开销 |
+| `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证：iter-0 位精确、L1 偏移、200-iter 参考、计时 A/B |
 | `optimization_plan.md` | 已实施 Phase 1/2/5 与 Phase 3 GPU S95 回退教训 |
