@@ -32,3 +32,8 @@ validation_*/
 
 # Design documents
 docs/
+
+# Generated flux NPY files (large, reproducible)
+flux_ellipse/
+flux_tps_lsq/
+flux_dump/

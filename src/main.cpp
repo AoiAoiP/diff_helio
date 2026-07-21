@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
                     cfg.heliostatWidth, cfg.heliostatLength);
                 pipeline.uploadHeliostatData(initCY);
             }
-            const auto &hc = heliostatConfigs[0];
+            for (const auto &hc : heliostatConfigs) {
             float dist = std::sqrt(hc.position[0]*hc.position[0] + hc.position[1]*hc.position[1] + hc.position[2]*hc.position[2]);
             fmt::print("Heliostat: {} (dist={:.1f}m)\n", hc.name, dist);
 
@@ -211,7 +211,7 @@ int main(int argc, char *argv[]) {
                 pipeline.uploadSurfaceFromFile(surfaceFile);
             }
 
-            for (size_t si = 0; si < std::min(sunTrain.size(), size_t(3)); si++) {
+            for (size_t si = 0; si < sunTrain.size(); si++) {
                 const auto &sd = sunTrain[si];
                 pipeline.updateUniforms(sd, hc.position, ap);
                 if (cfg.useBoltParameterization && surfaceFile.empty()) {
@@ -278,6 +278,7 @@ int main(int argc, char *argv[]) {
                 fmt::print("  │ [5] Rays processed:     {:>8d}\n", diag[5]);
                 fmt::print("  └{:─^64}┘\n", "");
             }
+            }  // end heliostat loop
             return 0;
         }
 
