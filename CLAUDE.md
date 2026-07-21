@@ -317,3 +317,15 @@ python scripts/post_fea_validation.py \
 # Dry-run：只生成 APDL 输入文件
 python scripts/post_fea_validation.py --stroke-file ... --dry-run
 ```
+
+---
+
+## 开放问题
+
+### 🔴 TPS 代理模型精度不足（待解决，2026-07-21 识别）
+
+APDL=GUI 位精确一致性已确认，但 **Proxy vs FEA 仍存在系统性偏差**（RMS ~2.0–3.3 mm, shape_corr 0.95–0.96）。根因：TPS 是纯几何 RBF 插值（核函数 r²log(r²)），不含板弯曲刚度 D、材料属性（E, ν）、自由边界条件、NLGEOM 非线性。
+
+详见 `docs/plate_proxy_replacement_research.md` — 调研了 5 类替代方案：POD-ROM、Kirchhoff Green 函数、模态展开、PINN/算子学习、POD+MLP 混合。
+
+**推荐路线**：POD+MLP 降阶模型（复用现有 APDL 管线采集 FEA 快照 → SVD → 轻量 MLP），精度预期 <2%。

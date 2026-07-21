@@ -347,9 +347,23 @@ Proxy vs FEA 偏差与方向 6 一致（~2.8–3.3 mm RMS, shape_corr 0.95–0.9
 | `CLAUDE.md` | 开发者参考：编译、架构、方法论、参数速查 |
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验完整报告 |
 | `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `docs/plate_proxy_replacement_research.md` | TPS 代理模型替代方案调研（POD-ROM / Green 函数 / 模态展开 / PINN） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 方法论对比与本项目 P0/P1/P2 优化清单 |
 | `analysis/p0_validation_report.md` | P0（A1 预裁剪 + L1 效率项）位精确一致性与时空开销验证 |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证（位精确性、L1、参考运行、计时 A/B） |
 | `validation/pre_fea_validation/FEA_VALIDATION_REPORT.md` | GUI Workbench FEA 验证报告（优化螺栓配置） |
 | `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总表 |
 | `analysis/` | 历史分析文档 |
+
+---
+
+## 开放问题
+
+### 🔴 TPS 代理模型精度不足（待解决）
+
+三路验证（方向 7）确认 APDL=GUI 位精确一致，但 **Proxy vs FEA 仍存在系统性偏差**（RMS ~2.0–3.3 mm, shape_corr 0.95–0.96, R² 0.87–0.91）。根因是 TPS（薄板样条）为纯几何插值方法——不含材料属性（E, ν, t）、不满足自由边界条件、忽略 NLGEOM 非线性。详见 `docs/plate_proxy_replacement_research.md`。
+
+**候选方案**（按优先级）：
+1. **POD+MLP 降阶模型** — FEA 快照 SVD + 小型 MLP 学映射，精度预期 <2%
+2. **Kirchhoff 板 Green 函数** — 解析、可微、物理精确（线性范围内）
+3. **模态展开** — FEA 模态分析 + Galerkin 投影，1 次模态分析即可验证线性精度上限
