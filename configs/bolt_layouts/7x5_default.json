@@ -10,5 +10,6 @@
   "poisson_ratio": 0.22,
   "density_kg_m3": 2500,
   "gravity_m_s2": 9.81,
-  "mesh_size_m": 0.204
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
 }

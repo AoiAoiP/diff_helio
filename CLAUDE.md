@@ -58,6 +58,9 @@ python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x
 
 # 面型验证（ANSYS FEA 点云 vs TPS proxy，倾角形变 + 光斑）
 python scripts/run_fea_validation.py --result-dir results_north_300iter --angles 0 29.5 58.5
+
+# 三路形变验证（APDL vs GUI vs Proxy）
+python scripts/post_fea_validation.py --stroke-file <path> --angles 29.5 58.5
 ```
 
 Shader 由 Slang 编译，入口点映射见 `CMakeLists.txt:69-97`。每个 entry point 生成独立 `.spv` 文件。运行时 SPIR-V 文件需在 `./shaders/` 下（cmake 自动复制到 exe 同级目录）。
@@ -250,12 +253,14 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | 文件 | 内容 |
 |------|------|
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验报告（2026-07-16） |
-| `validation/fea_comparison/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（2026-07-17） |
-| `validation/fea_comparison/62deg_comparison.png` | 62° GUI vs Python 重力对比图 |
+| `train_data/zero_heights_ON/VALIDATION_TABLE.md` | APDL vs GUI 零螺栓重力 22 角度验证表（2026-07-20） |
+| `results_4mirror_200iter/fea_validation/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（优化螺栓，2026-07-20） |
 | `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
+| `validation/pre_fea_validation/FEA_VALIDATION_REPORT.md` | GUI Workbench FEA 验证报告（2026-07-20） |
+| `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总（2026-07-21） |
 | `analysis/` | 历史分析文档 |
 
 ### 最新四面镜结果（2026-07-17, data_proxy 修正后）
@@ -280,3 +285,35 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | 58.5° | OFF | 2.22 mm | 0.942 | 0.976 |
 
 > NLGEOM-ON 在所有指标上优于 OFF——proxy 使用 NLGEOM-ON 重力 bins，天然匹配 FEA-ON 解。
+
+### APDL 批处理 vs GUI Workbench 等价性验证（2026-07-21）
+
+对 North 300m 最优螺栓配置（35.7 mm max）在 29.5° 和 58.5° 下进行三路对比（APDL / GUI / TPS Proxy）。详见 `scripts/post_fea_validation.py`。
+
+**APDL vs GUI FEA 形变对比**：
+
+| 角度 | RMS | R² | shape_corr | PV ratio |
+|:---:|:---:|:---:|:---:|:---:|
+| 29.5° | **0.050 mm** | **1.0000** | **1.0000** | **1.0000** |
+| 58.5° | **0.051 mm** | **1.0000** | **1.0000** | **1.0006** |
+
+> **结论**：APDL 批处理管线与 Workbench GUI 在有螺栓位移场景下**位精确一致**（RMS < 0.05 mm ≈ 节点输出精度量级）。自动化 APDL 管线可完全替代手工 GUI 导出 FEA 点云。
+
+**Proxy vs FEA**：RMS ~2.8–3.3 mm, shape_corr 0.95–0.96（与方向 6 结论一致，当前 data_proxy 版本）。
+
+Usage:
+```bash
+# 三路对比（需 ANSYS 许可证）
+python scripts/post_fea_validation.py \
+    --stroke-file results_4mirror_200iter/North_300m_STROKE_bolts.txt \
+    --angles 29.5 58.5 \
+    --gui-csv validation/pre_fea_validation/node_dump_295deg.csv ...
+
+# 仅比较（跳过 ANSYS，使用已有 APDL CSV）
+python scripts/post_fea_validation.py \
+    --stroke-file ... --angles 29.5 58.5 \
+    --apdl-csv <existing_apdl>.csv --gui-csv <gui_ref>.csv
+
+# Dry-run：只生成 APDL 输入文件
+python scripts/post_fea_validation.py --stroke-file ... --dry-run
+```

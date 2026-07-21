@@ -163,7 +163,8 @@ def generate_bolt_stroke_apdl(layout, angle_deg, bolt_xy, bolt_strokes, work_dir
     dat_path = os.path.join(work_dir, f"bolt_stroke_{angle_deg}deg.dat")
     node_csv = os.path.join(work_dir, f"node_dump_{angle_deg}deg.csv")
 
-    mesh_size = layout.get("mesh_size_m", 0.200)
+    ndiv_x = layout.get("mesh_ndiv_x", 64)
+    ndiv_z = layout.get("mesh_ndiv_z", 48)
     n_bolts = len(bolt_xy)
 
     lines = []
@@ -190,6 +191,7 @@ def generate_bolt_stroke_apdl(layout, angle_deg, bolt_xy, bolt_strokes, work_dir
     lines.append("MP,NUXY,1,nu")
     lines.append("MP,DENS,1,rho")
     lines.append("ET,1,SHELL181          ! 4-node structural shell")
+    lines.append("KEYOPT,1,3,2           ! incompatible modes (match Workbench GUI)")
     lines.append("R,1,thick")
     lines.append("")
     lines.append("! ── Geometry: clean 4-sided area ──")
@@ -199,10 +201,13 @@ def generate_bolt_stroke_apdl(layout, angle_deg, bolt_xy, bolt_strokes, work_dir
     lines.append(f"K,4,{corners_global[3][0]:.6f},{corners_global[3][1]:.6f},{corners_global[3][2]:.6f}")
     lines.append("A,1,2,3,4")
     lines.append("")
-    lines.append("! ── Mesh: clean mapped mesh ──")
-    lines.append(f"ESIZE,{mesh_size:.4f}              ! element size")
+    lines.append(f"! ── Mesh: mapped quad mesh {ndiv_x}x{ndiv_z} (matching Workbench GUI) ──")
     lines.append("MSHAPE,0,2D             ! quad elements")
-    lines.append("MSHKEY,1                ! mapped mesh")
+    lines.append("MSHKEY,1                ! mapped mesh (deterministic)")
+    lines.append(f"LESIZE,1,,,{ndiv_x}           ! L1 (K1-K2): X-parallel, {ndiv_x} divs")
+    lines.append(f"LESIZE,2,,,{ndiv_z}           ! L2 (K2-K3): Z-parallel, {ndiv_z} divs")
+    lines.append(f"LESIZE,3,,,{ndiv_x}           ! L3 (K3-K4): X-parallel, {ndiv_x} divs")
+    lines.append(f"LESIZE,4,,,{ndiv_z}           ! L4 (K4-K1): Z-parallel, {ndiv_z} divs")
     lines.append("AMESH,ALL")
     lines.append("")
     lines.append("! ── BC: prescribed bolt displacement in plate normal direction ──")
@@ -229,9 +234,11 @@ def generate_bolt_stroke_apdl(layout, angle_deg, bolt_xy, bolt_strokes, work_dir
     lines.append("/SOLU")
     lines.append("ANTYPE,STATIC")
     lines.append("NLGEOM,ON")
-    lines.append("NSUBST,30,200,15")
+    lines.append("AUTOTS,ON              ! auto time stepping (match GUI)")
+    lines.append("NSUBST,1,10,1           ! initial=1, max=10, min=1 (match GUI)")
     lines.append("OUTRES,ALL,ALL")
     lines.append("PIVCHECK,0             ! disable pivot checking")
+    lines.append("PRED,ON                ! predictor (match GUI)")
     lines.append("")
     lines.append("! Gravity: always vertical (global +Y direction)")
     lines.append("ACEL,0,9.81,0")
@@ -804,6 +811,21 @@ def compute_metrics(w_proxy, w_fea):
     }
 
 
+def _bolt_positions_7x5():
+    """Return (bx, bz) arrays for the standard 7×5 bolt layout (35 bolts)."""
+    nx, nz = 7, 5
+    m = 0.08
+    pW, pL = 12.84, 9.45
+    bx, bz = [], []
+    for j in range(nz):
+        v = m + (1.0 - 2.0 * m) * j / (nz - 1)
+        for i in range(nx):
+            u = m + (1.0 - 2.0 * m) * i / (nx - 1)
+            bx.append((u - 0.5) * pW)
+            bz.append((v - 0.5) * pL)
+    return np.array(bx), np.array(bz)
+
+
 def generate_comparison_plot(w_proxy, w_fea, Xg, Zg, angle_deg, label, out_dir):
     """Generate side-by-side comparison figure: proxy, FEA, residual, cross-section.
 
@@ -824,6 +846,9 @@ def generate_comparison_plot(w_proxy, w_fea, Xg, Zg, angle_deg, label, out_dir):
 
     rms, r2, sc = metrics['rms_mm'], metrics['r2'], metrics['shape_corr']
     pv_p, pv_f = metrics['pv_proxy_mm'], metrics['pv_fea_mm']
+
+    # Bolt positions for overlay
+    bx, bz = _bolt_positions_7x5()
 
     fig = plt.figure(figsize=(20, 10))
     gs = GridSpec(2, 3, figure=fig, hspace=0.35, wspace=0.35,
@@ -851,6 +876,10 @@ def generate_comparison_plot(w_proxy, w_fea, Xg, Zg, angle_deg, label, out_dir):
         ax.set_aspect('equal')
         ax.set_xlabel('x (m)'); ax.set_ylabel('z (m)')
         plt.colorbar(im, ax=ax, label='mm')
+        # Bolt positions on proxy and FEA subplots
+        if col < 2:
+            ax.scatter(bx, bz, c='black', s=12, marker='o', zorder=5,
+                      edgecolors='white', linewidths=0.3)
 
     # Row 2 left: center cross-section
     ax_xs = fig.add_subplot(gs[1, 0])

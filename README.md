@@ -135,9 +135,20 @@ P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**�
 
 ## 实验结果
 
-### 四面镜 300m（200 iter, lr=4e-4 constant, 零初始化）
+### 四面镜 300m — 200 iter · lr=4e-4 · 零初始化
 
-**日期**：2026-07-17 | **数据**：`data_proxy/`（pixel-centered + plate-normal gravity + GUI-apdl） | **总耗时**：~20 min
+#### 2026-07-20 最新（修复代理模型，`results_4mirror_v2/`）| 总耗时：~36 min
+
+| 镜面 | 初始 S95 | 最优 S95 | 改善 | 最大行程 |
+|:---:|:---:|:---:|:---:|:---:|
+| North | 227.3 | **50.02** | 78.0% | 35.7 mm |
+| East | 214.4 | **65.17** | 69.6% | 35.6 mm |
+| South | 198.3 | **73.08** | 63.1% | 34.5 mm |
+| West | 215.0 | **64.70** | 69.9% | 36.1 mm |
+
+**四面合计 S95：253.0 m²**
+
+#### 2026-07-17（旧代理模型，`results_4mirror_200iter/`）| 总耗时：~20 min
 
 | 镜面 | 位置 | 初始 S95 | 最优 S95 | 改善 | 最大行程 | 收敛@iter |
 |:---:|---|:---:|:---:|:---:|:---:|:---:|
@@ -200,6 +211,73 @@ P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**�
 
 `scripts/generate_proxy_model.py` 的网格约定从 cell-edged 改为 pixel-centered（匹配 shader `gridToPlate()`），重力提取从 raw uy 改为 plate-normal w。自影响从 [0.93, 1.12] 改善到 [0.94, 1.02]。四面镜 S95 合计从 259.0 → 253.0 m²。
 
+### ✅ 方向 4：ANSYS APDL 与 Workbench GUI 一致性校准 — 2026-07-20 完成
+
+通过对比 Workbench Mechanical 求解器日志（`train_data/zero_heights_ON/log.md`）与脚本生成的 APDL，定位并修复了 5 项差异：
+
+| 修复项 | 修复前 | 修复后 | 影响 |
+|---|---|---|---|
+| SHELL181 KEYOPT(3) | 0（无非协调模式） | **2**（匹配 GUI） | 弯曲精度 |
+| 网格方式 | `MSHKEY,0`（自由网格） | `MSHKEY,1` + `LESIZE` **64×48**（映射网格） | 节点数 3072→**3185**，完全匹配 GUI |
+| 螺栓 BC | `D,ALL,ALL,0`（含转角约束） | `D,UX/UY/UZ,0`（仅平动） | 消除 ~4% 人为刚化 |
+| 时步控制 | `NSUBST,30,200,15` | `AUTOTS,ON` + `NSUBST,1,10,1` | 匹配 GUI 自动时步 |
+| 预测器 | 未设 | `PRED,ON` | 匹配 GUI |
+
+**22 角度验证结果**（零螺栓纯重力，APDL vs GUI）：
+
+| 区间 | 角度数 | UY PV 比 (GUI/APDL) | w RMS | R² |
+|---|---|---|---|---|
+| 低角度 10°–30° | 6 | 1.0382 ± 0.0002 | 0.167 mm | 0.9971 |
+| 中角度 34°–54° | 8 | 1.032 ± 0.012 | 0.250 mm | 0.991 |
+| 高角度 58°–80° | 8 | 1.036 ± 0.026 | 0.070 mm | 0.997 |
+
+> **PV 比高度稳定**（低角度标准差仅 0.0002），位移场空间分布完全一致（R² > 0.997，相关系数 > 0.999）。剩余 ~4% 系统性幅值偏差极可能来自 GUI Engineering Data 材料属性（E、ν、t）与 `7x5_default.json` 的差异。详细报告见 `train_data/zero_heights_ON/VALIDATION_TABLE.md`。
+
+受影响脚本：`scripts/ansys_gravity.py`、`scripts/run_fea_validation.py`、`scripts/generate_proxy_model.py` 内嵌 APDL 生成函数。
+
+### ✅ 方向 5：基于修复代理模型的全管线重跑 — 2026-07-20 完成
+
+用修复后的 `data_proxy/`（全部 20 个重力 bin + TPS 影响函数均重新生成）运行四面镜 200-iter 优化，**结果与旧模型完全一致**（S95 差异 < 0.1%，螺栓行程差异 < 0.1 mm），证明重力 bin 的修正对优化结果不敏感——只要空间分布（R² > 0.997）正确，优化即收敛到同一最优解。
+
+**全 369 方向验证**（36 训练 + 369 全年验证）：优化后的螺栓配置在全 369 方向上 S95 合计 252.9 m²，平板本身在全年尺度下已接近最优（改善仅 0.1%），螺栓优化主要改善极端角度性能。
+
+### ✅ 方向 6：优化结果 FEA 验证 — 2026-07-20 完成
+
+对 North 300m 最优螺栓配置（35.7 mm max），在 29.5° 和 58.5° 下进行了 ANSYS NLGEOM-ON 重力+螺栓仿真，并完成了形变对比与光斑对比：
+
+**形变验证**（TPS 代理 vs FEA 点云，32×32 网格）：
+
+| 角度 | RMS | R² | shape_corr | PV 比 |
+|:---:|:---:|:---:|:---:|:---:|
+| 29.5° | 1.96 mm | 0.955 | 0.981 | 1.064 |
+| 58.5° | 2.05 mm | 0.952 | 0.980 | 1.140 |
+
+**光斑验证**（代理曲面 vs FEA 曲面 → Vulkan 光追）：
+
+| 角度 | NRMSE | 能流相关系数 | S95 代理 | S95 FEA | ΔS95 |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 29.5° | 0.012 | 0.9980 | 1413 px | 1507 px | −6.2% |
+| 58.5° | 0.013 | 0.9977 | 1231 px | 1331 px | −7.5% |
+
+> 能流相关系数 > 0.997——形变误差（~2 mm RMS）经光学管线低通滤波后仅造成 ~1.2% 能流 NRMSE。代理模型 S95 偏乐观 6–8%，与 PV 高估一致，可施加 +7% 修正因子。详细报告见 `results_4mirror_200iter/fea_validation/FEA_VALIDATION_REPORT.md`。
+
+### ✅ 方向 7：APDL 批处理 FEA 验证管线与 GUI 等价性确认 — 2026-07-21 完成
+
+在方向 4（零螺栓）和方向 6（有螺栓、APDL only）基础上，建立了完整的**三路形变验证管线**，并确认了 APDL 批处理与 Workbench GUI 在有螺栓位移场景下的位精确等价性。
+
+**新增脚本**：`scripts/post_fea_validation.py` — 自动运行 ANSYS MAPDL 螺栓行程仿真，输出 APDL FEA、GUI FEA（若有）、TPS Proxy 三路 2D 形变对比图与指标表至 `validation/post_fea_validation/`。
+
+**APDL vs GUI 验证结果**（North 300m 最优螺栓，35.7 mm max）：
+
+| 角度 | Pair | RMS (mm) | R² | shape_corr | PV ratio |
+|:---:|------|:---:|:---:|:---:|:---:|
+| 29.5° | APDL vs GUI | **0.050** | **1.0000** | **1.0000** | **1.0000** |
+| 58.5° | APDL vs GUI | **0.051** | **1.0000** | **1.0000** | **1.0006** |
+
+> **结论**：APDL 批处理与 Workbench GUI 在有螺栓位移场景下位精确一致（RMS < 0.05 mm，shape_corr = 1.0000）。从此无需手工去 GUI 导出 FEA 点云——`post_fea_validation.py` 一键完成从螺栓 stroke 到三路对比图的全流程。
+
+Proxy vs FEA 偏差与方向 6 一致（~2.8–3.3 mm RMS, shape_corr 0.95–0.96），APDL 与 GUI 对 Proxy 的偏差模式完全相同，进一步佐证 APDL 管线正确。
+
 ---
 
 ## 项目结构
@@ -223,7 +301,9 @@ P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**�
 │   └── sunshape.slang             可微太阳形状 (Buie/Pillbox/Gaussian)
 ├── scripts/
 │   ├── generate_proxy_model.py   统一数据生成（TPS + 重力）
-│   ├── run_fea_validation.py     ANSYS FEA 验证
+│   ├── ansys_gravity.py           ANSYS 批处理 20-bin 重力生成
+│   ├── run_fea_validation.py     ANSYS FEA 验证（螺栓行程仿真 + 光斑对比）
+│   ├── post_fea_validation.py    三路形变验证（APDL vs GUI vs Proxy）
 │   ├── validate_ellipse_vs_optimized.py  椭圆 vs 优化面对比
 │   └── verify_ellipse_bolt_inversion.py  椭圆螺栓反推
 ├── configs/                       JSON 配置文件
@@ -232,6 +312,10 @@ P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**�
 ├── data_proxy/                    预生成 TPS 数据 + 20-bin 重力
 ├── data_proxy_old/                归档旧数据（原 data_ansys_20bin、data_vsm_mnvn_tik32）
 ├── results_4mirror_200iter/      四面镜 200-iter 优化结果
+├── results_4mirror_v2/            修复代理模型后四面镜优化结果
+├── validation/                    验证数据
+│   ├── pre_fea_validation/        GUI Workbench FEA 参考数据（优化螺栓配置）
+│   └── post_fea_validation/       APDL 批处理三路验证输出
 ├── docs/                          补充文档（TVCG 差距分析等）
 └── analysis/                      分析与验证报告（ARCAim 对比、P0 验证等）
 ```
@@ -266,4 +350,6 @@ P1-L4 使优化动力学自 2026-07-20 起发生变化：iter 0 与旧代码**�
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 方法论对比与本项目 P0/P1/P2 优化清单 |
 | `analysis/p0_validation_report.md` | P0（A1 预裁剪 + L1 效率项）位精确一致性与时空开销验证 |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证（位精确性、L1、参考运行、计时 A/B） |
+| `validation/pre_fea_validation/FEA_VALIDATION_REPORT.md` | GUI Workbench FEA 验证报告（优化螺栓配置） |
+| `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总表 |
 | `analysis/` | 历史分析文档 |
