@@ -1,50 +1,50 @@
-# Sundir Sampling Comparison — East & West 300m
+# 太阳方向采样对比实验 —— 东侧与西侧 300m
 
-**Date**: 2026-07-22  
-**Optimizer**: Bolt mode, 200 iter, lr=4e-4, TPS proxy, Buie sun (CSR=0.01)
+**日期**：2026-07-22  
+**优化器**：Bolt 模式，200 次迭代，lr=4e-4，TPS 代理模型，Buie 太阳（CSR=0.01）
 
-## Why East & West?
+## 为什么选东西侧？
 
-The user correctly identified that North-facing heliostats see a relatively symmetric annual sun distribution (sun tracks east→south→west, always in front). East and West heliostats face perpendicular to the sun's path, creating asymmetric illumination patterns that make them more sensitive to training set coverage.
+用户正确指出：北侧定日镜（面朝南）的年太阳方向分布相对对称（太阳轨迹为东→南→西，始终在镜面前方）。而东西侧定日镜面朝方向与太阳轨迹垂直，产生不对称的辐照模式，使其对训练集覆盖度更敏感。
 
-## Results: North vs East vs West
+## 结果：北侧 vs 东侧 vs 西侧
 
-### Training S95 (on training set) vs Validation S95 (1556-dir dense set)
+### 训练 S95（训练集上）vs 验证 S95（1556 方向稠密集）
 
-**North 300m** (from previous experiment):
-| Config | Train S95 | Val S95 | Gap |
+**North 300m**（上一轮实验）：
+| 配置 | 训练 S95 | 验证 S95 | 差距 |
 |--------|----------|---------|-----|
 | 36dir | 50.02 | 50.39 | +0.37 |
 | 110dir | 50.36 | 50.39 | +0.03 |
 | 334dir | 50.38 | 50.38 | +0.00 |
 
-**East 300m**:
-| Config | Train S95 | Val S95 | Gap |
+**East 300m**：
+| 配置 | 训练 S95 | 验证 S95 | 差距 |
 |--------|----------|---------|-----|
 | 36dir | 65.12 | **66.81** | **+1.69** |
 | 110dir | 66.15 | **66.60** | +0.45 |
 | 334dir | 66.59 | **66.60** | +0.01 |
 
-**West 300m**:
-| Config | Train S95 | Val S95 | Gap |
+**West 300m**：
+| 配置 | 训练 S95 | 验证 S95 | 差距 |
 |--------|----------|---------|-----|
 | 36dir | 64.74 | **66.45** | **+1.71** |
 | 110dir | 66.00 | **66.29** | +0.29 |
-| 334dir | — (crashed) | — | — |
+| 334dir | —（崩溃） | — | — |
 
-> West 334dir consistently crashed after ~3 iterations (likely GPU resource exhaustion from previous runs). East 334dir results serve as proxy — both directions are symmetric.
+> West 334dir 在约 3 次迭代后持续崩溃（可能因前序运行的 GPU 资源残留）。East 334dir 的结果可作为参考——东西两侧具有对称性。
 
-### Runtime
+### 耗时
 
-| Config | North | East | West |
+| 配置 | North | East | West |
 |--------|-------|------|------|
 | 36dir | 4.9 min | 6.3 min | 5.2 min |
 | 110dir | 15.1 min | 15.6 min | 16.2 min |
 | 334dir | 50.2 min | 46.5 min | — |
 
-### Bolt Stroke Patterns
+### 螺栓行程
 
-| Heliostat | Config | Max Stroke | RMS Stroke |
+| 定日镜 | 配置 | 最大行程 | RMS 行程 |
 |-----------|--------|-----------|------------|
 | East | 36dir | 35.7 mm | 18.5 mm |
 | East | 110dir | 37.1 mm | 18.4 mm |
@@ -52,33 +52,33 @@ The user correctly identified that North-facing heliostats see a relatively symm
 | West | 36dir | 36.2 mm | 18.7 mm |
 | West | 110dir | 37.0 mm | 18.9 mm |
 
-## Key Findings
+## 关键发现
 
-### 1. East/West are 4-5× more sensitive to training set size than North
+### 1. 东西侧对训练集大小的敏感度是北侧的 4–5 倍
 
-The train/val gap for 36dir is 1.69–1.71 m² for East/West vs only 0.37 m² for North. This confirms the user's hypothesis that East/West heliostats need denser sun direction sampling.
+36dir 的训练/验证差距：东西侧为 1.69–1.71 m²，而北侧仅 0.37 m²。这证实了用户的假设——东西侧定日镜需要更密的太阳方向采样。
 
-### 2. 110dir is the minimum viable training set for East/West
+### 2. 110dir 是东西侧的最低可行训练集
 
-- 36dir → train/val gap of 1.7 m² (significant overfitting)
-- 110dir → gap of 0.3–0.5 m² (acceptable)
-- 334dir → gap of 0.01 m² (negligible)
+- 36dir → 训练/验证差距 1.7 m²（显著过拟合）
+- 110dir → 差距 0.3–0.5 m²（可接受）
+- 334dir → 差距 0.01 m²（可忽略）
 
-### 3. Validation S95 differences are small but real
+### 3. 验证 S95 的差异虽小但确实存在
 
-For East: 36dir val S95 = 66.81 vs 110dir = 66.60 (0.3% higher). Unlike North where all three were identical, East/West show a measurable (though small) degradation with too-few directions.
+东侧：36dir 验证 S95 = 66.81，110dir = 66.60（高出 0.3%）。不同于北侧三者完全一致，东西侧在方向数过少时出现了可测量的（虽然不大）性能退化。
 
-### 4. 110dir matches 334dir in validation performance
+### 4. 110dir 在验证性能上匹配 334dir
 
-East 110dir val S95 = 66.60 = East 334dir val S95. The 110-dir paper mode achieves the same generalization as the 3× larger balanced mode, at 1/3 the runtime.
+East 110dir 验证 S95 = 66.60 = East 334dir 验证 S95。论文推荐的 110 方向模式在泛化性能上与 3 倍大的 balanced 模式持平，且仅需 1/3 的运行时间。
 
-### 5. East vs West differences are small
+### 5. 东西侧之间的差异很小
 
-West performs slightly better than East at all sampling densities (e.g., West 110dir val S95 = 66.29 vs East 66.60). This is expected from the asymmetric annual sun path — West sees more afternoon sun.
+West 在所有采样密度下均略优于 East（例如 West 110dir 验证 S95 = 66.29 vs East 66.60）。这符合年太阳轨迹的不对称性——西侧镜面接收到更多的午后阳光。
 
-## Recommendation
+## 建议
 
-- **For East/West heliostats**: Use at least **110dir (paper mode)** — 36dir shows measurable overfitting
-- **For North/South heliostats**: 36dir is acceptable (no measurable performance loss)
-- **For consistent pipeline**: Use **110dir (paper mode)** universally — it's the sweet spot across all orientations
-- **For final production runs**: Use **334dir (balanced)** — eliminates train/val gap entirely, 3× slower than 110dir
+- **东西侧定日镜**：至少使用 **110dir（paper 模式）**——36dir 存在可测量的过拟合
+- **南北侧定日镜**：36dir 可接受（无显著性能损失）
+- **统一流程**：全线使用 **110dir（paper 模式）**——在所有朝向下均为最佳平衡点
+- **最终生产运行**：使用 **334dir（balanced 模式）**——完全消除训练/验证差距，比 110dir 慢 3 倍

@@ -144,17 +144,33 @@ time_offset_minutes = (120.0 - lon) * 4  # 仅经度修正，不含均时差
 
 ---
 
-## 6. 新脚本使用指南
+## 6. 实验验证（2026-07-22）
+
+对 North 300m 和 East/West 300m 进行了 36dir / 110dir (paper) / 334dir (balanced) 三组对比实验。
+
+### 核心结论
+
+| 定日镜朝向 | 36dir 过拟合 | 110dir 过拟合 | 334dir 过拟合 | 推荐 |
+|-----------|-------------|--------------|--------------|------|
+| North（面南） | +0.37 m² | +0.03 m² | ±0.00 m² | 36dir 可接受 |
+| East（面西） | **+1.69 m²** | +0.45 m² | +0.01 m² | **≥110dir** |
+| West（面东） | **+1.71 m²** | +0.29 m² | — | **≥110dir** |
+
+> 东西侧对训练集大小的敏感度是北侧的 4–5 倍。110dir 在验证 S95 上匹配 334dir（差异 <0.01 m²），速度 3 倍快。
+
+详见 `sundir_sample/EXPERIMENT_REPORT.md` 和 `sundir_sample/EXPERIMENT_REPORT_EAST_WEST.md`。
+
+## 7. 新脚本使用指南
 
 ```bash
-# 推荐：balanced 模式（12 月 × 3 天 × 13 点）
+# 推荐：balanced 模式（12 月 × 3 天 × 13 时点, ~334 方向）
 python scripts/generate_sundir_year.py
 
-# 论文级别最小集（快速迭代）
+# 论文级别最小集（~110 方向, 快速迭代）
 python scripts/generate_sundir_year.py --mode paper
 
-# 精细优化（论文月度 + 0.5h 日内步长）
-python scripts/generate_sundir_year.py --mode paper-fine
+# 稠密集（~1556 方向, 验证/最终生产）
+python scripts/generate_sundir_year.py --mode dense
 
 # 带 DNI 权重（注意：当前 pipeline 不支持权重列，需先修改 input.cpp）
 python scripts/generate_sundir_year.py --dni-weight --dni-model meinel
@@ -165,3 +181,5 @@ python scripts/generate_sundir_year.py --lat 39.0 --lon 94.0 --tz Asia/Urumqi
 # 输出到指定文件
 python scripts/generate_sundir_year.py -o data/my_sundirs.txt
 ```
+
+> **已废弃**：`sundir_sample/DE_sundir_year.py`（平太阳时 + 2h 间隔）和 `data/738_sundir_year.txt`（含 DNI 权重列，但 pipeline 未使用）。保留仅用于历史参考。
