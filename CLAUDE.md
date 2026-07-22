@@ -80,6 +80,55 @@ python scripts/generate_sundir_year.py --lat 37.36 --lon 97.29 --tz Asia/Shangha
 ./build/src/Release/bezier_opt.exe configs/bolt_optimize_north_300iter.json
 ```
 
+### Ellipse → LS-Fit → S95 验证管线
+
+对比理想椭圆曲面最小二乘 TPS 拟合 vs 端到端 S95 优化的光斑质量差异。
+
+```bash
+# 1. LS 拟合：对 ellipse.txt 中全部 20 面镜子做 TPS LS 拟合
+python scripts/lsq_fit_elliptic.py
+# 输出: data/init/{NEWS}_{distance}m_lsq_bolt_init.txt + data/init/lsq_fit_summary.csv
+
+# 2. 准备 bolt init 目录（匹配 C++ "auto" 命名约定）
+mkdir -p data/init_lsq data/init_opt
+for f in data/init/*_lsq_bolt_init.txt; do
+    name=$(basename "$f" _lsq_bolt_init.txt)
+    cp "$f" "data/init_lsq/${name}_bolt_init.txt"
+done
+# 同理复制优化后的 BEST_bolts.txt 到 data/init_opt/
+
+# 3. 编译（确保 main.cpp 无距离过滤，bolt_init_dir 可配置）
+cmake --build build --config Release
+
+# 4. 评估 LS 和 Opt 螺栓的年均 S95（334 方向）
+./build/src/Release/bezier_opt.exe configs/_eval_lsq.json   # → results_lsq_eval/
+./build/src/Release/bezier_opt.exe configs/_eval_opt.json   # → results_opt_eval/
+
+# 5. 对比汇总
+python scripts/compare_lsq_vs_opt.py \
+    --lsq-s95 "North_300m=51.61" ... \
+    --opt-s95 "North_300m=50.40" ... \
+    --opt-summary-dir results_Field
+```
+
+**配置文件**：`_eval_lsq.json` 设置 `bolt_init_file: "auto"` + `bolt_init_dir: "data/init_lsq/"` + `iterations: 1` + `learning_rate: 0.0`（纯评估，不优化）。
+
+**已有脚本**（仅 300m NEWS，3 太阳方向 `--dump-flux` 模式）：
+- `scripts/validate_ellipse_tps_news.py` — 椭圆 → TPS LS 拟合 + 形变指标对比图
+- `scripts/compute_s95_from_flux.py` — 从 `--dump-flux` NPY 计算 S95（纯 Python）
+
+**2026-07-22 全镜场对比结论**（150m-1200m NEWS，334 方向年均 S95）：
+
+| 距离 | LS/Opt 比值 | 结论 |
+|------|------------|------|
+| 150m | 1.01–1.05x | LS 拟合几乎等同优化 |
+| 300m | 1.004–1.02x | LS 拟合极接近优化 |
+| 600m | 1.004–1.01x | LS 拟合略逊于优化 |
+| 900m | **1.95–2.93x** | LS 严重不足，优化器找到非椭圆面型 |
+| 1200m | **2.07–3.70x** | LS 完全失败，需端到端优化 |
+
+**关键发现**：近距离（≤600m）理想椭圆面可通过 LS 拟合良好近似；远距离（≥900m）优化器主动偏离椭圆面型（螺栓行程 70-76mm vs LS 的 10-13mm），通过非椭圆面型补偿重力 + 接收器几何 + 太阳形状的耦合效应。
+
 ### 其他运行模式
 
 ```bash

@@ -77,12 +77,8 @@ int main(int argc, char *argv[]) {
         auto sunTrain = bezier::loadSunDirections(cfg.sunTrainFile);
         auto sunValidation = bezier::loadSunDirections(cfg.sunValidationFile);
         auto allConfigs = bezier::loadHeliostatConfigs(cfg.ellipseFile);
-        // 300m positions only
-        std::vector<bezier::HeliostatConfig> heliostatConfigs;
-        for (const auto &hc : allConfigs) {
-            float d = std::sqrt(hc.position[0]*hc.position[0] + hc.position[2]*hc.position[2]);
-            if (d > 290.0f && d < 310.0f) heliostatConfigs.push_back(hc);
-        }
+        // Process all heliostat positions (filter removed — field-wide eval)
+        std::vector<bezier::HeliostatConfig> heliostatConfigs = allConfigs;
         fmt::print("Loaded: {} train, {} val, {} configs (filtered from {})\n",
                    sunTrain.size(), sunValidation.size(), heliostatConfigs.size(), allConfigs.size());
         // sunShapeIntegral is computed automatically in loadConfig()
