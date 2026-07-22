@@ -34,6 +34,39 @@ python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x
 
 输出至 `data_proxy/`（默认）：`influence_phi.bin`、`influence_phi_u/v.bin`、`gravity_{angle}deg.bin`（20 个角度）、`gravity_angles.json`、`gravity_y.bin`。
 
+### 太阳方向采样（全年 sundir 生成）
+
+```bash
+# 推荐：balanced 模式（12 月 × 3 天 × 13 时点, ~334 方向, 日常优化用）
+python scripts/generate_sundir_year.py
+
+# 论文级最小集（12 月 × 1 天 × 13 时点, ~110 方向, 快速迭代）
+python scripts/generate_sundir_year.py --mode paper
+
+# 稠密集（12 月 × 14 天 × 13 时点, ~1556 方向, 验证/最终生产）
+python scripts/generate_sundir_year.py --mode dense
+
+# 自定义位置与时区
+python scripts/generate_sundir_year.py --lat 37.36 --lon 97.29 --tz Asia/Shanghai
+```
+
+**设计原则**（详见 `sundir_sample/analysis_and_recommendations.md`）：
+- 以**真太阳正午**（azimuth=180°）为基准对称采样——消除均时差（EoT）导致的上午/下午不对称
+- 12 个月月度覆盖——日期维度已饱和（论文结论）
+- 日内 1h 间隔（13 时点）——比旧脚本 2h 间隔加密一倍
+
+**推荐训练集**（基于 2026-07-22 对比实验）：
+
+| 场景 | 训练集 | 方向数 | 耗时（200 iter） |
+|------|--------|--------|-----------------|
+| 快速迭代（仅北/南侧） | `data/36_sundir_fast.txt` | 36 | ~5 min |
+| **日常优化（全方向）** | `data/334_sundir_balanced.txt` | 334 | ~50 min |
+| 最终生产运行 | 同上 balanced 模式 | 334 | ~50 min |
+
+> 东西侧镜面对训练集大小更敏感：36dir 过拟合达 +1.7 m²，110dir 降至 +0.4 m²，334dir 基本消除。详见 `sundir_sample/EXPERIMENT_REPORT_EAST_WEST.md`。
+
+> **已废弃**：`sundir_sample/DE_sundir_year.py`（平太阳时 + 2h 间隔）和 `data/738_sundir_year.txt` 已被新脚本替代，保留仅用于历史参考。旧脚本使用平太阳时（仅经度修正）而非真太阳时，存在 ±15 min 的不对称偏差。
+
 ### 运行优化
 
 ```bash
@@ -263,6 +296,9 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总（2026-07-21） |
 | `docs/progress_2026-07-21.md` | **POD-Linear 代理模型原型实现与验证**（方案 E），含 100 FEA 快照、K=51 POD 模型、6 次优化 lr 扫描（2026-07-21） |
 | `docs/plate_proxy_replacement_research.md` | TPS 代理替代方案调研 + §7 POD-Linear 实验报告（2026-07-21） |
+| `sundir_sample/analysis_and_recommendations.md` | **太阳方向采样策略分析** — 论文结论 vs 本项目需求、真太阳时对称采样设计（2026-07-22） |
+| `sundir_sample/EXPERIMENT_REPORT.md` | **North 300m sundir 对比实验** — 36/110/334dir 验证 S95 几乎一致（<0.03%），东西侧需更密采样（2026-07-22） |
+| `sundir_sample/EXPERIMENT_REPORT_EAST_WEST.md` | **东西侧 sundir 对比实验** — 东西侧过拟合达北侧 4–5 倍，110dir 为最低可行训练集（2026-07-22） |
 | `analysis/` | 历史分析文档 |
 
 ### 最新四面镜结果（2026-07-17, data_proxy 修正后）

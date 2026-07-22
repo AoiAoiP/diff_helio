@@ -1,3 +1,4 @@
+# DEPRECATED (2026-07-22): Use scripts/generate_sundir_year.py instead. This file uses mean solar time (EoT asymmetry ~±15 min) and 2h intraday step. Kept for historical reference only.
 0.475971 0.390567 0.787978 0.509316
 0.018337 0.495766 0.868263 0.563296
 -0.444258 0.405323 0.798967 0.517920
