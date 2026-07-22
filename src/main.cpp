@@ -211,11 +211,30 @@ int main(int argc, char *argv[]) {
                 pipeline.uploadSurfaceFromFile(surfaceFile);
             }
 
+            // Helper: compute cosTheta for gravity scaling (same as in pipeline.cpp)
+            auto computeCosTheta = [](const std::array<float,3>& sd, const std::array<float,3>& hp,
+                                       const std::array<float,3>& ap) -> float {
+                float sdx=sd[0], sdy=sd[1], sdz=sd[2];
+                float sl = std::sqrt(sdx*sdx+sdy*sdy+sdz*sdz);
+                float rdx=ap[0]-hp[0], rdy=ap[1]-hp[1], rdz=ap[2]-hp[2];
+                float rl = std::sqrt(rdx*rdx+rdy*rdy+rdz*rdz);
+                float ny = sdy/sl + rdy/rl;
+                float nx = sdx/sl + rdx/rl, nz = sdz/sl + rdz/rl;
+                float nl = std::sqrt(nx*nx+ny*ny+nz*nz);
+                return std::abs(ny) / nl;
+            };
+
+            float pixelArea = (2.0f * 3.14159265f * cfg.receiverRadius * cfg.receiverHeight)
+                            / (cfg.pixelWidth * cfg.pixelHeight);
+            float evalTotalS95 = 0.0f;
+            int evalValidSuns = 0;
+
             for (size_t si = 0; si < sunTrain.size(); si++) {
                 const auto &sd = sunTrain[si];
                 pipeline.updateUniforms(sd, hc.position, ap);
                 if (cfg.useBoltParameterization && surfaceFile.empty()) {
-                    pipeline.boltForwardSurface(1.0f);
+                    float cosTheta = computeCosTheta(sd, hc.position, ap);
+                    pipeline.boltForwardSurface(cosTheta);
                 }
                 pipeline.forwardRender(!cfg.useBoltParameterization && surfaceFile.empty());
                 auto flux = pipeline.readFlux();
@@ -244,6 +263,28 @@ int main(int argc, char *argv[]) {
                         }
                     }
                     flux = std::move(rolled);
+                }
+
+                // Compute S95 for evaluation (inline, same algorithm as pipeline.cpp)
+                {
+                    float total = 0.0f, maxVal = 0.0f;
+                    for (float f : flux) { total += f; if (f > maxVal) maxVal = f; }
+                    if (total > 1e-6f) {
+                        float low = 0.0f, high = maxVal, level = 0.0f;
+                        for (int binIter = 0; binIter < 20; binIter++) {
+                            float mid = (low + high) * 0.5f;
+                            float sumAbove = 0.0f;
+                            for (float f : flux) if (f > mid) sumAbove += f;
+                            if (sumAbove / total > 0.95f) low = mid;
+                            else { high = mid; level = mid; }
+                        }
+                        if (level > 0) {
+                            int count = 0;
+                            for (float f : flux) if (f >= level) count++;
+                            evalTotalS95 += count * pixelArea;
+                            evalValidSuns++;
+                        }
+                    }
                 }
 
                 // Save as NPY
@@ -278,6 +319,12 @@ int main(int argc, char *argv[]) {
                 fmt::print("  │ [5] Rays processed:     {:>8d}\n", diag[5]);
                 fmt::print("  └{:─^64}┘\n", "");
             }
+                // Print evaluation summary for this heliostat
+                if (evalValidSuns > 0) {
+                    float avgS95 = evalTotalS95 / evalValidSuns;
+                    fmt::print("  EVAL: avg S95 = {:.4f} m² over {} / {} valid sun directions\n",
+                               avgS95, evalValidSuns, sunTrain.size());
+                }
             }  // end heliostat loop
             return 0;
         }

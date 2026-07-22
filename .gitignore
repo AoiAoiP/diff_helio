@@ -36,4 +36,5 @@ docs/
 
 wang/
 data_proxy_mode2/
-data_proxy_old/
+data_proxy_old/build_exe.exe
+shaders/*.spv
