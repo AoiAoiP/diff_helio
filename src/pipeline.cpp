@@ -1541,7 +1541,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         // Resolve bolt init file: override > config > "auto" (by heliostat name + distance) > zero
         std::string boltFile = overrideBoltInitFile.empty() ? m_cfg.boltInitFile : overrideBoltInitFile;
         if (boltFile == "auto") {
-            boltFile = "data/init/" + hc.name + "_" + std::to_string((int)dist) + "m_bolt_init.txt";
+            boltFile = m_cfg.boltInitDir + hc.name + "_" + std::to_string((int)dist) + "m_bolt_init.txt";
         }
 
         // Initialize bolt heights: from file, or zero (gravity sag)

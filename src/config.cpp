@@ -133,6 +133,7 @@ Config loadConfig(const std::string &path) {
     cfg.numCpX = extractInt(json, "num_cp_x", 5);
     cfg.numCpZ = extractInt(json, "num_cp_z", 5);
     cfg.boltInitFile = extractString(json, "bolt_init_file", "");
+    cfg.boltInitDir = extractString(json, "bolt_init_dir", "data/init/");
     cfg.disableGravity = extractInt(json, "disable_gravity", 0) != 0;
 
     cfg.maxBoltStroke = extractFloat(json, "max_bolt_stroke", 0.040f);

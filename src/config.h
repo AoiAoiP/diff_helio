@@ -81,6 +81,8 @@ struct Config {
 
     // Initial bolt heights file (elliptic guess, overrides zero-init)
     std::string boltInitFile;
+    // Directory prefix for bolt init files when bolt_init_file="auto"
+    std::string boltInitDir = "data/init/";
 
     // P1-L4: max bolt stroke for tanh bounded parameterization (m)
     float maxBoltStroke = 0.040f;
