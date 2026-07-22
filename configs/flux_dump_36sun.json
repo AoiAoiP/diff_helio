@@ -9,7 +9,7 @@
   "heliostat_width": 12.84,
   "heliostat_length": 9.45,
   "grid_size": 32,
-  "glass_depth": 0.003,
+  "glass_depth": 0.004,
   "refractive_index": 1.523,
   "slope_error": 0.001,
   "reflectivity": 0.88,

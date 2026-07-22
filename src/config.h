@@ -8,6 +8,7 @@
 namespace bezier {
 
 enum class SunShapeType : uint32_t { BUIE = 0, PILLBOX = 1, GAUSSIAN = 2 };
+enum class ProxyMode : uint32_t { TPS = 0, POD_LINEAR = 1, POD_MLP = 2 };
 
 struct Config {
     // Files
@@ -27,7 +28,7 @@ struct Config {
     float heliostatWidth = 12.84f;
     float heliostatLength = 9.45f;
     uint32_t gridSize = 32;
-    float glassDepth = 0.003f;
+    float glassDepth = 0.004f;
     float refractiveIndex = 1.523f;
     float slopeError = 0.001f;
     float reflectivity = 0.88f;
@@ -71,6 +72,7 @@ struct Config {
     bool enableMSELoss = false;          // MSE loss: match ideal elliptical flux pixel-by-pixel
     bool disableGravity = false;       // if true, zero out gravity in proxy model
     std::string influenceDataPath = "data_proxy";
+    ProxyMode proxyMode = ProxyMode::TPS;
 
     // B-spline dimensionality reduction (25 CPs -> 35 bolts)
     bool useBSpline = false;

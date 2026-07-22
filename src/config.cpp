@@ -122,6 +122,13 @@ Config loadConfig(const std::string &path) {
     cfg.boltMargin = extractFloat(json, "bolt_margin", 0.08f);
     cfg.influenceDataPath = extractString(json, "influence_data_path", "data_proxy");
 
+    {
+        std::string pm = extractString(json, "proxy_mode", "tps");
+        if (pm == "pod_linear") cfg.proxyMode = ProxyMode::POD_LINEAR;
+        else if (pm == "pod_mlp") cfg.proxyMode = ProxyMode::POD_MLP;
+        else cfg.proxyMode = ProxyMode::TPS;
+    }
+
     cfg.useBSpline = extractInt(json, "use_bspline", 0) != 0;
     cfg.numCpX = extractInt(json, "num_cp_x", 5);
     cfg.numCpZ = extractInt(json, "num_cp_z", 5);

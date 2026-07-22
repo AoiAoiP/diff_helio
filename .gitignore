@@ -27,13 +27,13 @@ Thumbs.db
 third_party/
 
 # Experimental results
+results/
 results_*/
 validation_*/
 
 # Design documents
 docs/
 
-# Generated flux NPY files (large, reproducible)
-flux_ellipse/
-flux_tps_lsq/
-flux_dump/
+wang/
+data_proxy_mode2/
+data_proxy_old/

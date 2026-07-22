@@ -240,7 +240,7 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | 接收器 | 圆柱 R=10m H=20m, 157×50 px |
 | 板弯曲刚度 D | 392 N·m |
 | 重力载荷 q | 98.1 N/m² |
-| 玻璃折射率 | 1.523, 厚 3mm |
+| 玻璃折射率 | 1.523, 厚 4mm |
 | 太阳模型 | Buie CSR=0.01, DNI=1000 W/m² |
 | 斜率误差 | 1 mrad |
 | 学习率（推荐） | 4×10⁻⁴ constant |
@@ -261,6 +261,8 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
 | `validation/pre_fea_validation/FEA_VALIDATION_REPORT.md` | GUI Workbench FEA 验证报告（2026-07-20） |
 | `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总（2026-07-21） |
+| `docs/progress_2026-07-21.md` | **POD-Linear 代理模型原型实现与验证**（方案 E），含 100 FEA 快照、K=51 POD 模型、6 次优化 lr 扫描（2026-07-21） |
+| `docs/plate_proxy_replacement_research.md` | TPS 代理替代方案调研 + §7 POD-Linear 实验报告（2026-07-21） |
 | `analysis/` | 历史分析文档 |
 
 ### 最新四面镜结果（2026-07-17, data_proxy 修正后）

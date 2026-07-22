@@ -516,7 +516,14 @@ void BezierPipeline::createBoltBuffers() {
         }
     }
 
-    // Load influence data from binary files
+    // Load influence data from binary files (TPS or POD-Linear: same .bin format)
+    {
+        const char *modeStr = "TPS";
+        if (m_cfg.proxyMode == ProxyMode::POD_LINEAR) modeStr = "POD-Linear";
+        else if (m_cfg.proxyMode == ProxyMode::POD_MLP) modeStr = "POD-MLP";
+        fmt::print("  Loading {} proxy data from {}/\n", modeStr, m_cfg.influenceDataPath);
+    }
+
     size_t infSize = n * gridPts * sizeof(float);
     auto loadBin = [&](const std::string &fname, GpuBuffer &buf) -> bool {
         std::string path = m_cfg.influenceDataPath + "/" + fname;
@@ -537,7 +544,7 @@ void BezierPipeline::createBoltBuffers() {
     ok = loadBin("influence_phi_u.bin", m_influencePhiU) && ok;
     ok = loadBin("influence_phi_v.bin", m_influencePhiV) && ok;
     ok = loadBin("gravity_y.bin", m_gravityY) && ok;
-    if (!ok) throw std::runtime_error("Failed to load influence data. Run scripts/generate_influence.py first.");
+    if (!ok) throw std::runtime_error("Failed to load influence data. Run scripts/generate_proxy_model.py or scripts/pod_train.py first.");
 
     // Phase 5: gradPartialTile (fixed-point int, per-grid-point, 12 KB) replaces 386 MB boltGradPartial
     m_boltGradPartialTile = m_app.createBuffer(gridPts * 3u * sizeof(int32_t),
@@ -1523,6 +1530,12 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         float dist = std::sqrt(hc.position[0] * hc.position[0] + hc.position[1] * hc.position[1] +
                                hc.position[2] * hc.position[2]);
         fmt::print("Optimizing (BOLT mode, {} bolts): {} (dist={:.1f}m)\n", m_cfg.numBolts, hc.name, dist);
+        {
+            const char *modeStr = "TPS";
+            if (m_cfg.proxyMode == ProxyMode::POD_LINEAR) modeStr = "POD-Linear";
+            else if (m_cfg.proxyMode == ProxyMode::POD_MLP) modeStr = "POD-MLP";
+            fmt::print("  Proxy model: {}  (data: {})\n", modeStr, m_cfg.influenceDataPath);
+        }
         fflush(stdout);
 
         // Resolve bolt init file: override > config > "auto" (by heliostat name + distance) > zero
