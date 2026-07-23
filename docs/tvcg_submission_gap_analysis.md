@@ -1,6 +1,18 @@
-# TVCG 投稿差距分析与补充实验规划
+# TVCG 投稿差距分析与行动建议
 
-> 撰写日期：2026-07-14 | 基于 IEEE VIS 2024–2026 审稿标准与相关论文发表先例
+> 初始撰写：2026-07-14 | 全面修订：2026-07-23（基于 7 月密集实验进展 + 论文大纲 + 投稿策略）
+
+---
+
+## 目录
+
+1. [TVCG 期刊背景](#1-tvcg-期刊背景)
+2. [当前项目状态（截至 2026-07-23）](#2-当前项目状态)
+3. [差距分析：已完成 vs 待补](#3-差距分析已完成-vs-待补)
+4. [论文框架大纲](#4-论文框架大纲)
+5. [投稿策略建议](#5-投稿策略建议)
+6. [执行路线图](#6-执行路线图)
+7. [参考文献](#7-参考文献)
 
 ---
 
@@ -10,7 +22,7 @@ IEEE TVCG（Transactions on Visualization and Computer Graphics）是计算机�
 
 | 指标 | 数据 |
 |------|------|
-| VIS 2024 接收率 | 124/557 = **22.3%**（一轮条件接受 23.2%，二轮 5 篇拒稿） |
+| VIS 2024 接收率 | 124/557 = **22.3%** |
 | 审稿轮次 | 2 轮（条件接受 → 修订 → 终审） |
 | 审稿人数 | ≥3（2 PC members + 1 external） |
 | 论文类型 | Technique / System / Application / Evaluation / Theory |
@@ -23,8 +35,6 @@ IEEE TVCG（Transactions on Visualization and Computer Graphics）是计算机�
 4. **Appropriateness of methodology** — 方法适当性
 5. **Research process followed** — 研究过程严谨性
 
-TVCG 审稿指导明确鼓励审稿人 champion **"innovative, bold, creative, and potentially transformative work"**，即使验证不够穷尽也可以接受——但前提是方法的创新性确实突出。
-
 ### 相关发表先例
 
 | 论文 | 期刊/会议 | 年份 | 与本项目的关系 |
@@ -35,266 +45,606 @@ TVCG 审稿指导明确鼓励审稿人 champion **"innovative, bold, creative, a
 | *Automatic heliostat learning for in situ CSP metrology* (Pargmann et al.) | Nature Comms | 2024 | **最接近的工作**：可微光线追踪用于定日镜表面计量 |
 | *Differentiable design of freeform optics* (Sun, Deng, Zhang) | ACM TOG/SIGGRAPH | 2025 | 可微渲染 + 物理光学仿真 + 实物原型验证 |
 
-**关键定位**：Pargmann et al. 做的是 *inverse problem*（从校准图像反推表面误差，面向已安装镜子），你做的是 *design optimization*（出厂前螺栓预调优化），需在 related work 中显式区别。
+**关键定位**：Pargmann et al. (2024) 做的是 *inverse metrology*（从校准图像反推表面误差，面向已安装镜子），本项目做的是 *design optimization*（出厂前螺栓预调优化）。两者的 differentiable ray tracing 底座相似，但优化变量本质不同——螺栓机械参数 vs 表面法向场。
 
 ---
 
-## 2. 差距分析
+## 2. 当前项目状态
 
-差距按严重程度分为三级：
+### 2.1 核心管线（全部完成）
+
+| 组件 | 状态 | 关键指标 |
+|------|:--:|------|
+| GPU S95 协作二分查找 | ✅ | 单 workgroup 256 线程 20 轮二分，与 CPU 版误差 ~1e-6 |
+| 免原子定点归约 | ✅ | gradPartialTile 12 KB，取代 368 MB boltGradPartial |
+| Command buffer 合批 | ✅ | 每 sun 单次 submit |
+| 可见性缓存 + 路径重放 | ✅ | rayValidity bitmask，反向零遮挡查询 |
+| 稀疏像素剔除 (activePixelList) | ✅ | ~49% workgroup 减少 |
+
+### 2.2 P0/P1 优化（2026-07-20 全部落地并验证）
+
+| 项 | 描述 | 实测结果 |
+|:---|------|------|
+| **A1** 逐光线预裁剪 | 宏观法向反射角预测试，cutoff 经 sunp[11] 传入 | 无损 −4.8%（margin≥8 位精确）；有损 margin=−30 可达 ~3.2× |
+| **L1** 效率正则项 | λ·M·E_ref/E 加至 S95 loss | 机制精确生效（偏移 +28,342 ≈ 理论 +28,260），λ=0.1 代价 +0.65% S95 |
+| **L4** tanh 行程约束 | h = h_max·tanh(ε)，始终启用 | 最优质量无损（50.0476 vs 50.0387），行程内建 <40 mm |
+| **A2** 编译期日轮特化 | Buie/Pillbox/Gaussian 三入口 | 性能中性（分支非瓶颈），代码保留 |
+| **L3** 逐迭代种子 | randomize_seed 机制就位 | 默认 OFF，多种子重评实验待做 |
+| **A4** 多 sun 合批 | 36→6 submits/iter | **已舍弃**：实测性能中性（submit 开销仅 ~0.2%，低于噪声） |
+| **A3** reflection-only | — | **已放弃**：改变物理模型，与全折射不可比 |
+
+### 2.3 太阳方向采样系统（2026-07-22 完成）
+
+| 模式 | 方向数 | 设计 | 200 iter 耗时 |
+|------|:---:|------|:---:|
+| paper | ~110 | 12 月 × 1 天 × 13 时点（真太阳正午对称） | ~15 min |
+| balanced（推荐） | ~334 | 12 月 × 3 天 × 13 时点 | ~50 min |
+| dense | ~1556 | 12 月 × 14 天 × 13 时点 | ~4 h |
+
+**核心实验结论**（详见 `sundir_sample/`）：
+
+| 定日镜朝向 | 36dir 过拟合 | 110dir 过拟合 | 334dir 过拟合 | 推荐最低训练集 |
+|-----------|-------------|--------------|--------------|:---:|
+| North（面南） | +0.37 m² | +0.03 m² | ±0.00 m² | 36dir |
+| East（面西） | **+1.69 m²** | +0.45 m² | +0.01 m² | **≥110dir** |
+| West（面东） | **+1.71 m²** | +0.29 m² | — | **≥110dir** |
+
+东西侧对面型优化的训练集敏感度是北侧的 4–5 倍。110dir (paper) 在各朝向下均为最佳速度/精度平衡点。
+
+### 2.4 FEA 验证体系（2026-07-20–21 重组）
+
+**三路验证管线**（`scripts/post_fea_validation.py`）：
+
+| 对比对 | RMS | R² | shape_corr | 结论 |
+|------|:---:|:---:|:---:|------|
+| **APDL vs GUI** (29.5°) | **0.050 mm** | **1.0000** | **1.0000** | 位精确一致——自动化 APDL 可替代手工 GUI |
+| **APDL vs GUI** (58.5°) | **0.051 mm** | **1.0000** | **1.0000** | 同上 |
+| Proxy vs APDL (29.5°) | 2.79 mm | 0.909 | 0.963 | 代理系统性高估形变幅值 |
+| Proxy vs APDL (58.5°) | 3.34 mm | 0.873 | 0.953 | 高角度偏差更大 |
+
+### 2.5 光斑验证（2026-07-20）
+
+对 North 300m 最优螺栓配置（35.7 mm max），在 29.5° 和 58.5° 进行 FEA vs TPS Proxy 能流对比：
+
+| 指标 | 29.5° | 58.5° |
+|------|:---:|:---:|
+| NRMSE | 0.017 | 0.018 |
+| 能流相关系数 | **0.997** | **0.996** |
+| S95 偏差 | −11.7% | −13.2% |
+
+> **结论**：形变误差（~2-3 mm RMS）经光学低通滤波后仅造成 ~1.7% NRMSE。S95 偏乐观 12–13%（代理形变幅值更大 → 聚焦更好），但光斑形态高度一致（相关系数 >0.996）。
+
+### 2.6 Ellipse vs TPS LSQ 对比（2026-07-22）
+
+四面镜椭圆解析面 vs TPS 最小二乘拟合：
+
+| 镜面 | 形变 RMS | R² | shape_corr | S95 比 (TPS/ellipse) |
+|:---:|:---:|:---:|:---:|:---:|
+| North | 0.40 mm | 0.9984 | 0.9992 | 1.017 |
+| East | 0.41 mm | 0.9983 | 0.9992 | 1.015 |
+| South | 0.41 mm | 0.9981 | 0.9991 | 1.013 |
+| West | 0.40 mm | 0.9983 | 0.9992 | 1.015 |
+
+> **结论**：TPS 表示能力几乎无损失地覆盖椭圆解析面（形变 RMS <0.41 mm, R² >0.998），证明 TPS 35-bolt 参数化的表示能力充分。
+
+### 2.7 四面镜优化结果（2026-07-17, 20-bin 数据修正后）
+
+| 镜面 | 初始 S95 | 最优 S95 | 改善 | Max Stroke |
+|:---:|:---:|:---:|:---:|:---:|
+| North | 227.3 m² | **50.05 m²** | 78.0% | 36.0 mm |
+| East | 214.4 m² | **65.11 m²** | 69.6% | 35.9 mm |
+| South | 198.3 m² | **73.13 m²** | 63.1% | 34.6 mm |
+| West | 215.0 m² | **64.67 m²** | 69.9% | 36.7 mm |
+
+> 配置：200 iter, lr=4e-4 constant, Adam β=(0.9, 0.999), 36 sundirs, pixel-centered 32×32 grid, 20-bin plate-normal gravity, Buie CSR=0.01, DNI=1000 W/m².
+
+---
+
+## 3. 差距分析：已完成 vs 待补
+
+差距分级沿用原有约定：
 
 - 🔴 **致命差距** — 缺少则直接拒稿
 - 🟡 **重大差距** — 审稿人会重点攻击，需在投稿前解决
-- 🟢 **增强项** — 加分但不致命，可部分延后
+- 🟢 **增强项** — 加分但不致命
 
 ---
 
-### 🔴 致命差距
+### 3.1 🔴 致命差距
 
-#### 2.1 缺少与竞争方法的对比实验
+#### 差距 1：缺少与竞争方法的对比实验
 
-当前管线只运行了"TPS 代理模型 + Adam 梯度优化"一种方案，没有任何对照组。TVCG 审稿人必然要求系统对比。
+| 对比维度 | 当前状态 | 待补实验 | 预期结论 |
+|----------|:--:|------|------|
+| **优化算法**：Adam vs CMA-ES vs BayesOpt | ❌ 未做 | Python black-box wrapper 调用 C++ 前向；CMA-ES（`cma` 库）、BayesOpt（`scikit-optimize`）；记录 S95 vs 评估次数 | Adam 在 35D 问题上样本效率远超无梯度方法 |
+| **参数化**：TPS 35-bolt vs Bézier 16-CP | ❌ 未做 | 重跑 Bézier 模式优化（已有代码），记录 S95 vs 自由度 | 35-bolt 优于 16-CP（自由度更高），但边际递减 |
+| **初始化**：零初始化 vs 椭圆 LSQ | ❌ 未做 | 椭圆面 TPS LSQ 拟合作为 warm-start，对比收敛曲线 | 椭圆 warm-start 可能加速前期收敛 |
 
-**需要补充的对比维度**：
+**优先级**：P0 | **估计工作量**：3–4 周
 
-| 对比维度 | 方案 A（你的方法） | 方案 B/C/D | 评估指标 |
-|----------|-------------------|-----------|----------|
-| 优化算法 | Adam + 可微梯度 | CMA-ES / 贝叶斯优化 / 遗传算法 | 最终 S95、收敛速度（iter / wall-clock）、目标函数评估次数 |
-| 代理模型 | TPS 影响函数叠加 | 直接 FEA 每步求解（有限差分）/ 神经网络代理 | S95、面型 RMS vs FEA ground truth |
-| 面型参数化 | 35 螺栓 TPS | Bézier 曲面（16 CP）/ NURBS / 直接节点位移（1024 变量） | S95、优化变量数 vs 质量 Pareto |
-| 初始化策略 | 零初始化 | 椭圆解析解初始化 / 最小二乘初始化 | 最终 S95、收敛 iter 数 |
+#### 差距 2：缺少系统消融实验
 
-**最低要求**：
-- 至少完成"优化算法对比"（CMA-ES 作为最小 baseline）
-- 至少完成"面型参数化对比"（Bézier 16 CP 已有实现）
-- 报告 wall-clock time 和 function evaluation count
+| 消融组件 | 当前状态 | 待补实验 |
+|----------|:--:|------|
+| 自影响修正 ON/OFF | ❌ | 关掉 `phi_kernel[j, self] += λ`，跑优化对比 S95 + 面型 RMS |
+| NLGEOM-ON vs OFF 重力 | 🟡 有 NLGEOM-ON/OFF 对比数据 | 用 OFF bins 重跑优化，量化 S95 退化 |
+| 重力 bin 密度 5/10/20 | 🟡 CLAUDE.md 报告 10-bin 已充分 | 用最终管线重验证，输出正式消融表 |
+| SPP 32²/25²/20²/16² | ❌ | SPP 扫描，记录最终 S95 + 收敛曲线稳定性 |
+| **Sundir 密度** 36/110/334 | ✅ **已完成** | 直接整理为消融图（训练/验证 S95 vs 方向数） |
+| **A1 预裁剪** ON/OFF | ✅ **已完成** | 位精确已验证，消融表直接引用 |
+| **L1 效率项** λ = 0/0.01/0.05/0.1 | 🟡 仅 λ=0 vs 0.1 | λ 扫描 → S95 vs 能量 Pareto 图 |
 
-**参考文献**：
-- Hansen (2016) "The CMA Evolution Strategy: A Tutorial" — CMA-ES 标准实现
-- ZeroGrads (ACM TOG 2024, DOI: 10.1145/3658173) — 神经网络代理 + 可微优化的对比范式
+**优先级**：P0 | **估计工作量**：1–2 周（sundir 消融已做完，SPP + 自影响 + NLGEOM 是主要新工作）
 
----
+#### 差距 3：缺少实物验证或系统误差预算分析
 
-#### 2.2 缺少消融实验（Ablation Study）
+**路径 B（最低可接受）当前进度**：
 
-需要系统性地移除/替换管线关键组件，展示每个组件对最终结果的贡献。
+| 误差源 | 量化方法 | 当前估计 | 状态 |
+|--------|---------|------|:--:|
+| TPS 基函数表示误差 | 椭圆面 → 最佳 TPS 拟合残差 | RMS **0.40 mm** (四面镜均值) | ✅ 已有 |
+| 线性叠加假设误差 | FEA-ON(全螺栓) vs proxy(全螺栓) | RMS **2.0–3.3 mm**, shape_corr **0.95–0.96** | ✅ 已有 |
+| 光斑能流误差 | FEA vs Proxy 光斑对比 | NRMSE **0.017–0.018**, 相关系数 **>0.996** | ✅ 已有 (仅 North 2 角度) |
+| 重力插值误差 | 20-bin 线性插值 vs 加密 reference | 10-bin → 20-bin 变化 <0.03 mm RMS（螺栓解相关 >0.9999） | ✅ 已有 |
+| 渲染器离散化误差 | SPP 32²→64² 外推 / SPP 扫描 | **待测** | ❌ |
+| 材料参数不确定度 | E, ν, 玻璃 n ±5% 扰动 → S95 变化 | **待测** | ❌ |
+| 太阳形状敏感度 | Buie vs Pillbox vs Gaussian → S95 差异 | **待测** | ❌ |
 
-**消融矩阵**：
+**待补**：将以上整合为一份 Error Budget Table（误差源 | 量级 | S95 影响 | 可减小性），并完成渲染器 + 材料 + 太阳形状三项补充测量。
 
-| 消融组件 | 移除方式 | 预期影响 | 评估指标 |
-|----------|---------|---------|----------|
-| 自影响修正 | 关掉 `phi_kernel[j, self] += λ` 修正 | 螺栓自位置响应被压低至 ~0.53，优化可能偏移 | S95 变化、面型 RMS vs FEA |
-| NLGEOM 重力 | 替换为 NLGEOM-OFF 重力 bins | 低角度（≤30°）膜刚化效应丢失 | S95 变化、面型差 |
-| 重力 bin 密度 | 5-bin vs 10-bin vs 20-bin | CLAUDE.md 报告 10-bin 已充分，需用最终管线重验证 | S95、收敛解相关度 |
-| 稀疏 culling | 关闭 active pixel list | 无光学影响，仅性能差异 | iter time、总优化时间 |
-| 渲染 SPP | 32² → 25² → 20² | 梯度噪声增加可能影响收敛 | 最终 S95 vs SPP、收敛曲线稳定性 |
-| 太阳方向数 | 36 → 18 → 9 | 年化代表性下降 | 优化后 S95 在 738 方向上的泛化表现 |
-
-**最低要求**：至少完成前 4 项（自影响、NLGEOM、bin 密度、SPP），每项展示定量退化。
-
----
-
-#### 2.3 缺少实物验证或系统误差分析
-
-这是三个致命差距中最难解决的。虽然 TVCG 对实物验证的要求略低于 TOG/SIGGRAPH，但完全没有是致命弱点。
-
-**路径 A（理想，投入最大）**：实物原型验证
-- 制作缩小比例镜面原型（如 1:4 缩比，~3m×2.4m）
-- 用摄影测量/激光扫描实测优化后螺栓调节的面型
-- 用太阳模拟器 + CCD 实测焦斑
-- 对比 TPS proxy 预测 vs 实测
-
-**路径 B（最低可接受）**：Simulation-to-reality gap 系统量化
-- 以 FEA NLGEOM-ON 作为 pseudo-ground-truth
-- 分解误差预算（error budget）：
-
-| 误差源 | 量化方法 | 当前估计 |
-|--------|---------|---------|
-| TPS 基函数表示误差 | 理想椭圆面 → 最佳 TPS 拟合残差 RMS | CLAUDE.md 报告 0.63mm（但光学影响大） |
-| 线性叠加假设误差 | FEA-ON(全螺栓) vs proxy(全螺栓) | CLAUDE.md 报告 RMS 1.53mm |
-| 重力插值误差 | 20-bin 线性插值 vs 加密 40-bin reference | 待测 |
-| 渲染器离散化误差 | SPP→∞ 外推 vs 32² | 待测 |
-| 材料参数不确定度 | E, ν, 玻璃 n 的 ±5% 扰动 → S95 变化 | 待测 |
-
-- 给出总误差预算表，讨论各项的量级与可控性
-- 论证"代理模型误差不影响优化方向"（已有部分证据：CLAUDE.md 5.3 节）
-
-**最低要求**：完成路径 B 的全部误差预算分析。
+**优先级**：P0 | **估计工作量**：1–2 周（主要是表格整合 + 3 项补测）
 
 ---
 
-### 🟡 重大差距
+### 3.2 🟡 重大差距
 
-#### 2.4 面型验证不完整
+#### 差距 4：面型验证不完整
 
-**当前状态**：仅验证了 North 300m 在 0°/29.5°/58.5° 三个角度下的面型（且 CLAUDE.md 标注为 10-bin 数据，需重做）。
+| 维度 | 当前覆盖 | 待扩展 |
+|------|------|------|
+| 镜面 | North（有螺栓 FEA） | East/South/West 有 ellipse 级验证，**缺有螺栓 FEA 对照** |
+| 角度 | 29.5°, 58.5°（North 优化后） | 扩展到 **5–6 角度**（14°/29.5°/45°/58.5°/67°），覆盖全工作范围 |
+| 空间分布 | 仅有全局 RMS/R² | 需要 **per-pixel 误差热力图**（板上哪里误差大？边角 vs 中心？） |
+| 工作点 | 优化后螺栓 FEA 验证仅 North | 需要 **四面镜 × 2 工作点**（零螺栓纯重力 + 优化后螺栓） |
 
-**需要补充**：
-- [ ] 用 **20-bin** 重力重做全部验证
-- [ ] 扩展到 **5–6 个角度**覆盖全工作范围（如 0°/15°/30°/45°/60°/75°）
-- [ ] **四面镜（E/S/W）的面型验证**——当前只有 North
-- [ ] **空间误差分布图**——误差在板上哪里大？边角 vs 中心？与弯曲刚度分布的关系？
-- [ ] **优化后工作点验证**——在优化后的非零螺栓高度下验证 FEA vs proxy，而非仅零螺栓纯重力
-- [ ] 报告 per-angle 的 **RMS、R²、shapeCorr、slopeCorr**
+**优先级**：P1 | **估计工作量**：2–3 周（主要是 ANSYS 批量跑 FEA 对照）
 
-**评估矩阵**：
+#### 差距 5：光斑验证不完整
 
-| 镜面 | 0° | 15° | 30° | 45° | 60° | 75° |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| North 300m | ✓重做 | ✗ | ✓重做 | ✗ | ✓重做 | ✗ |
-| East 300m | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| South 300m | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| West 300m | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| 维度 | 当前覆盖 | 待扩展 |
+|------|------|------|
+| 角度数 | 2 个 (29.5°, 58.5°) | 至少 4–5 个代表性角度 |
+| 镜面数 | 仅 North | 至少再加 East 或 West |
+| 全年评估 | ❌ | 用最优螺栓跑 334/1556 方向的纯前向 S95 评估（不反向，~15-20 min） |
+| 多指标 | 仅 NRMSE + correlation + S95 | 加总能量比 (E_proxy/E_fea)、峰值比、溢出能量 |
 
----
+**全年 S95 分布**是论文的重要图表——展示优化解的泛化性能。单次纯前向 ~20 min 完成。
 
-#### 2.5 光斑验证不足
+**优先级**：P1 | **估计工作量**：1–2 周
 
-**当前状态**：仅验证了 3 个太阳方向的 flux map。
+#### 差距 6：收敛性与敏感度分析
 
-**需要补充**：
-- [ ] 使用 `738_sundir_year.txt` 报告 **全年 S95 分布**（中位数、P5/P25/P75/P95、最差 5% 场景）
-- [ ] FEA 面型 → 光追 vs. TPS proxy 面型 → 光追：**逐像素 flux 相关性 + 散点图**
-- [ ] 报告 **总能量、峰值能流、S95** 三指标的全年对比
-- [ ] 修复 `main.cpp:218` 硬编码 `boltForwardSurface(1.0f)` → 使用正确的 `computeTilt(sunDir, pos, aim)` 计算 cosθ
-- [ ] 在正确 cosθ 下重跑椭圆三方法对比（CLAUDE.md 后续工作#1）
+| 分析维度 | 当前状态 | 待补实验 |
+|----------|:--:|------|
+| 初始化敏感度 | ❌ | 零初始化 vs 椭圆 LSQ vs 3 个随机种子 → 是否收敛到同一解？ |
+| 学习率扫描 | ❌ | lr ∈ {5e-5, 1e-4, 2e-4, 4e-4, 8e-4} × 200 iter |
+| Adam β 参数 | ❌ | β₁ ∈ {0.8, 0.9} × β₂ ∈ {0.99, 0.999} |
+| 多种子稳健性 (L3) | 🟡 机制就位 | randomize_seed=ON，同一配置 5 seeds → 解的标准差 |
+| 不同螺栓数 | ❌ | 35 (7×5) vs 36 (6×6) 收敛对比 |
 
----
+**优先级**：P1 | **估计工作量**：1–2 周
 
-#### 2.6 收敛性与敏感度分析
-
-**需要补充**：
-- [ ] **初始化敏感度**：零初始化 vs 椭圆初始化 vs 随机初始化（≥3 seeds）→ 是否收敛到同一解？
-- [ ] **学习率敏感度**：lr ∈ {5e-5, 1e-4, 2e-4, 5e-4} → 最终 S95 vs lr 曲线
-- [ ] **Adam β 参数**：β₁ ∈ {0.8, 0.9, 0.95}、β₂ ∈ {0.99, 0.999} 的影响
-- [ ] **收敛速度**：报告 S95 进入最优值 5% 以内所需的 iter 数
-- [ ] **不同螺栓数**：35 (7×5) vs 36 (6×6) → 收敛行为差异
-
----
-
-#### 2.7 与最相关工作的差异化定位
+#### 差距 7：与相关工作的差异化定位（写作）
 
 需要在论文中显式论述与以下工作的区别：
 
-| 工作 | 区别点 |
-|------|--------|
-| Pargmann et al. (2024) | 他们是 *inverse metrology*（诊断已有镜子），你是 *design optimization*（出厂前预调）；你有力学代理模型连接螺栓到面型，他们只有光学逆问题 |
-| Zhou et al. (TVCG 2026) | 他们是点光源 → 透镜自由曲面设计，你是平行光 → 反射镜面优化；你的物理约束（重力/弯曲）是核心而非仅光学 |
-| Sun et al. (TOG 2025) | 他们优化透镜曲面，你优化反射镜支撑结构；你的优化变量是机械参数（螺栓行程）而非光学面型直接参数 |
+| 工作 | 共同点 | 区别点 |
+|------|------|------|
+| Pargmann et al. (2024) | 可微光线追踪用于定日镜 | 他们是 *inverse metrology*（诊断已装镜子），我们是 **design optimization**（出厂前预调）；我们有力学代理模型连接螺栓→面型→光学 |
+| ARCAim / diffspt (2026) | Vulkan compute + Slang AD + 接收面 MCRT | 他们优化瞄准点（2 DOF/mirror），我们优化面型（35 DOF/mirror）；我们有 TPS 力学代理模型；我们的梯度穿越力学→光学双域 |
+| Zhou et al. (TVCG 2026) | 可微渲染 + 光学设计优化 | 他们是透镜自由曲面，我们是反射镜支撑结构；我们的优化变量是机械参数（螺栓行程）而非光学面型直接参数 |
+| Sun et al. (TOG 2025) | 可微自由曲面光学 | 同上——机械参数 vs 光学面型 |
+
+**优先级**：P1 | **估计工作量**：3–5 天（纯写作）
+
+#### 差距 8：性能加速
+
+| 项 | 状态 | 说明 |
+|------|:--:|------|
+| A5 网格课程 16²→32² / 低 SPP + 滤波 | ❌ **最大剩余加速杠杆** | 前 60% iter 用 16×16 网格（成本 1/4），后 40% 切 32×32 精修。预期总时间 −30–40% |
+| A4 多 sun 合批 | ⚠️ 已舍弃 | 实测性能中性（submit 开销仅 ~0.2%） |
+| L2 反向滤波 (dL/dF) | ❌ | 与 A5 低 SPP 配套降噪，S95 对通量扰动敏感需先量化 |
+
+**优先级**：P1（A5 低风险高收益） | **估计工作量**：1–2 周（A5）
 
 ---
 
-#### 2.8 性能加速未完成
+### 3.3 🟢 增强项
 
-多 sun 批量并行（CLAUDE.md 后续工作#3，预期 2–3× 加速）未实现。虽然不影响方法论创新性，但影响 "potential impact" 评分——TVCG 审稿人关注方法的工程可行性。
-
----
-
-### 🟢 增强项
-
-#### 2.9 全年性能评估
-
-使用 738 太阳方向做全年 S95 统计（已有数据，需跑实验）。
-
-#### 2.10 B-spline 降维
-
-探索 `useBSpline`（25 CPs → 35 bolts）对优化质量和收敛速度的影响，作为 scalability 分析。
-
-#### 2.11 螺栓布局对比
-
-6×6 (36 bolts) vs 7×5 (35 bolts) — 已有两个布局 JSON，证明方法对布局不敏感。
-
-#### 2.12 开源与可复现性
-
-TVCG 鼓励 open practices。准备开源代码、数据、配置是加分项。
+| # | 增强项 | 状态 | 工作量 |
+|:---:|------|:--:|:---:|
+| 2.9 | 全年 1556 方向 S95 分布统计 | ❌ | 1 周 |
+| 2.10 | B-spline 降维 (25 CP → 35 bolts) | ❌ | 3 天（已有实现） |
+| 2.11 | 6×6 vs 7×5 螺栓布局对比 | ❌ | 3 天（已有两个 JSON） |
+| 2.12 | 开源代码 + 可复现管线 | 🟡 代码在 repo | 1 周（整理 doc + 配置清理） |
+| — | cosθ 修正 + 重跑椭圆三方法对比 | 🟡 | ~1 天 |
 
 ---
 
-## 3. 补充实验优先级排序
+### 3.4 差距汇总矩阵
 
-| 优先级 | 实验 | 预计工作量 | 对应差距 | 备注 |
-|:---:|---|:---:|:---:|---|
-| **P0** | 与 ≥2 种无梯度优化方法对比（CMA-ES + 贝叶斯优化） | 高（~3–4 周） | 🔴#1 | 需实现 CMA-ES wrapper 调用 C++ 管线或 Python proxy |
-| **P0** | 系统消融实验（≥5 组件逐个移除） | 中（~1–2 周） | 🔴#2 | 多数可在 Python proxy 中完成 |
-| **P0** | Simulation-to-reality gap error budget | 中（~2 周） | 🔴#3 | 路径 B |
-| **P1** | 用 20-bin 重做全部面型验证（5 角度 × 4 镜面 × 2 状态） | 中（~2–3 周） | 🟡#4 | 需 ANSYS 批量重算 FEA 对照 |
-| **P1** | 全年 738 方向光斑验证 + FEA vs proxy 像素级对比 | 中（~1–2 周） | 🟡#5 | 数据已有，需编写对比脚本 |
-| **P1** | 收敛性分析（初始化/lr/β 敏感度 + 收敛曲线） | 低（~1 周） | 🟡#6 | 参数扫描脚本 |
-| **P1** | 修复 `main.cpp:218` cosθ bug + 重跑椭圆三方法对比 | 低（~1–2 天） | 🟡#5,7 | 代码修复 + 重跑 |
-| **P1** | 差异化定位论述 + Related work 框架撰写 | 低（~3 天） | 🟡#7 | 论文写作 |
-| **P2** | 多 sun 批量并行 + 性能对比 | 高（~2–3 周） | 🟡#8 | C++/Slang 重构 |
-| **P2** | B-spline 降维实验 | 低（~3 天） | 🟢#10 | 已有实现，仅需跑实验 |
-| **P2** | 6×6 vs 7×5 布局对比 | 低（~3 天） | 🟢#11 | 已有两个布局 JSON |
-| **P3** | 实物原型制作 + 测量 | 很高（数月） | 🔴#3 路径 A | 需经费与加工资源 |
+| 优先级 | # | 差距 | 已完成 % | 剩余工作量 | 对论文的影响 |
+|:---:|:---:|------|:---:|:---:|------|
+| 🔴 P0 | 1 | 对比实验（优化算法 + 参数化） | 0% | 3–4 周 | 无对比 = 直接拒稿 |
+| 🔴 P0 | 2 | 系统消融实验 | ~40% | 1–2 周 | 核心组件贡献无法证明 |
+| 🔴 P0 | 3 | 误差预算 (Path B) | ~60% | 1–2 周 | 代理模型可信度无定量支撑 |
+| 🟡 P1 | 4 | 面型验证扩展 | ~30% | 2–3 周 | 验证范围不足，泛化性存疑 |
+| 🟡 P1 | 5 | 光斑验证扩展 + 全年 | ~25% | 1–2 周 | 光学端证据单薄 |
+| 🟡 P1 | 6 | 收敛性/敏感度分析 | ~10% | 1–2 周 | 方法稳健性无定量支撑 |
+| 🟡 P1 | 7 | 差异化定位论述 | 0% | 3–5 天 | novelty 不清晰 |
+| 🟡 P1 | 8 | A5 网格课程加速 | 0% | 1–2 周 | 性能数字不够有竞争力 |
+| 🟢 P2 | 9–12 | 增强项 | 0–20% | 2–3 周 | 锦上添花 |
+
+**总估计剩余工作量**：**10–16 周**（全职），集中在对比实验 + 验证扩展 + 论文写作。
 
 ---
 
-## 4. 建议的执行路线图
+## 4. 论文框架大纲
 
-### Phase 1：基础修复 + 数据重跑（Week 1–2）
+### 4.1 建议投稿信息
 
-1. 修复 `main.cpp:218` cosθ bug
-2. 用 20-bin 重跑 North 300m 面型验证（5 角度 × FEA 对照）
-3. 编写全年 738 方向光斑对比脚本
-4. 确定当前管线输出的"基线数字"（S95、面型 RMS、iter time）
+| 项目 | 内容 |
+|------|------|
+| **目标期刊** | IEEE TVCG（VIS 2027 Special Issue）或 Solar Energy（备选） |
+| **论文类型** | Technique Paper |
+| **页数** | 10–12 页（TVCG 正文上限 12 页） + 补充材料 |
 
-### Phase 2：消融实验（Week 3–4）
+### 4.2 建议标题
 
-1. 自影响修正 ON/OFF
-2. NLGEOM-ON vs NLGEOM-OFF 重力 bins
-3. 5-bin vs 10-bin vs 20-bin 重力
-4. SPP 25² → 20² → 16²
-5. 整理消融表格与论述
+**主标题**（二选一）：
 
-### Phase 3：对比实验（Week 5–8）
+> **Differentiable Heliostat Surface Optimization: Connecting Bolt Strokes to Optical Performance via Thin-Plate Spline Proxy Models**
 
-1. 实现 CMA-ES wrapper（Python proxy 侧）
-2. 跑 CMA-ES / Bayesian opt / Adam 三方法对比
-3. Bézier 16 CP vs TPS 35 bolt 参数化对比
-4. 收敛性参数扫描
+> **Bolt-Stroke Optimization of Heliostat Surfaces with Differentiable Ray Tracing and Physics-Based Proxy Models**
 
-### Phase 4：误差预算 + 写作（Week 9–12）
+### 4.3 作者与贡献
 
-1. Error budget 分析
-2. 差异化定位论述
-3. 论文初稿 + 图表
+建议按贡献排序为：
+- **第一作者**：你（核心方法 + 全部实验 + 代码实现）
+- **通讯/合作者**：如能纳入 FEA / CSP 领域导师，可增强学术可信度
 
-### Phase 5（可选，如条件允许）
+### 4.4 核心创新点（论文卖点）
 
-1. 多 sun 批量并行优化
-2. 实物原型制作
+1. **首个连接机械自由度 → 光学性能的完全可微优化管线**
+   - 螺栓行程 (35 DOF) → TPS 影响函数 → 表面位移 → MCRT → S95 loss → 梯度反传
+   - 梯度穿越**两个物理域**（力学 + 光学），此前无人实现
+
+2. **TPS 影响函数代理模型使梯度流动成为可能**
+   - 物理驱动的 RBF 薄板样条（非数据驱动）
+   - 单位分解性质（Σφ_b ≡ 1）保证叠加的物理正确性
+   - 解析梯度链：dL/dh_b = Σ ∂L/∂flux · (∂flux/∂y · φ_b + ...)
+
+3. **GPU 端到端零回读优化循环**
+   - S95 阈值 GPU 协作二分查找（单 workgroup，20 轮）
+   - Adam 在 tanh ε-空间更新
+   - 单 command buffer 提交，全流程 4 字节回读/iter
+
+4. **真太阳时对称训练集采样策略**
+   - 消除均时差导致的训练不对称性
+   - 实验验证：东西侧对采样密度敏感度是北侧 4–5 倍
+
+### 4.5 详细结构
+
+```
+1. Introduction (≈1.5 pages)
+   ├─ 1.1 CSP 定日镜聚光效率与面型精度的关系
+   ├─ 1.2 现有面型优化方法的局限
+   │      - FEA 试错：慢、非可微
+   │      - 经验规则（椭圆面等）：不考虑安装位置特殊性
+   │      - 无梯度黑箱优化：35D 问题上样本效率极低
+   └─ 1.3 本文贡献（Contributions 列表，4–5 条）
+
+2. Related Work (≈2 pages)
+   ├─ 2.1 Heliostat Metrology and Surface Optimization
+   │      - Pargmann et al. (2024): differentiable RT for inverse metrology
+   │        区别：inverse problem（诊断已装镜）vs design optimization（出厂前预调）
+   │      - ARCAim (2026): differentiable aiming optimization
+   │        区别：瞄准点 (2 DOF/mirror) vs 面型 (35 DOF/mirror)
+   ├─ 2.2 Differentiable Rendering for Optical Design
+   │      - Zhou et al. (TVCG 2026): 可微焦散设计
+   │      - Sun et al. (TOG 2025): 自由曲面透镜优化
+   │        区别：机械支撑参数 vs 光学面型直接参数
+   ├─ 2.3 Proxy Models and Reduced-Order Methods
+   │      - SurroFlow (2025): normalizing-flow 代理
+   │      - POD-ROM in computational mechanics
+   │        区别：TPS 是物理驱动 RBF（无训练数据），不是数据驱动
+   └─ 2.4 GPU-Accelerated Monte Carlo Ray Tracing for CSP
+          - SolTrace, Tonatiuh, etc.
+
+3. Method (≈4–5 pages)
+   ├─ 3.1 Problem Formulation
+   │      - 定日镜几何参数 + 螺栓布局
+   │      - 目标：min_h Σ_sun S95(flux(h; sun)), s.t. |h_b| ≤ h_max
+   │      - 太阳方向分布（训练集设计）
+   │
+   ├─ 3.2 TPS Influence Function Proxy Model  ← 核心创新 #1
+   │      - 板法向位移场分解：w(r) = UY_grav(θ) + Σ h_b·φ_b(r)
+   │      - TPS 系统构建：K_{ij} = r²log(r²) + λδ_{ij}
+   │      - 自影响修正 + pixel-centered 网格
+   │      - 单位分解性质 (Σφ_b ≡ 1) 及其物理意义
+   │      - φ_b 解析导数（供 shader 法向计算）
+   │      - 图：φ_b 的空间分布示例 (3–4 个代表性螺栓)
+   │
+   ├─ 3.3 Gravity Model: FEA-Direct + Dense Angular Interpolation
+   │      - 20-bin 稠密角度方案
+   │      - NLGEOM-ON vs OFF 差异
+   │      - GUI 坐标系约定与自动化 APDL 管线
+   │      - 图：重力分量随倾角变化 + 双线性插值示意
+   │
+   ├─ 3.4 Differentiable Ray Tracing Pipeline
+   │      - 接收面收集式 MCRT（与 ARCAim 同构）
+   │      - Buie 太阳模型 + 双层玻璃折射
+   │      - 逐光线预裁剪 (A1) + 可见性位缓存
+   │      - S95 损失函数：GPU 协作二分查找阈值 + sigmoid 损失
+   │
+   ├─ 3.5 Gradient Backpropagation Chain  ← 核心创新 #2
+   │      - dL/dh_b = Σ_sun Σ_pixel [∂L/∂flux · (∂flux/∂y · φ_b + ∂flux/∂y_u · ∂φ_b/∂u + ∂flux/∂y_v · ∂φ_b/∂v)]
+   │      - 三段反向：bwd_diff → reduceSurfaceGradients → projectBoltGradients
+   │      - Slang 自动微分实现
+   │
+   ├─ 3.6 Optimization
+   │      - Adam in ε-space with tanh bounding
+   │      - 效率正则项 λ·E_ref/E
+   │      - 单 command buffer 提交 + GPU 零回读
+   │      - 算法伪代码
+   │
+   └─ 3.7 Training Set Design: True-Solar-Noon Symmetric Sampling
+          - 均时差问题与对称采样动机
+          - 12 月 × 3 天 × 13 时点方案
+          - 东西侧经验训练集敏感度差异
+
+4. Implementation (≈1 page)
+   ├─ 4.1 Vulkan Compute + Slang Shader System
+   ├─ 4.2 Dispatch 拓扑（见 CLAUDE.md dispatch 表）
+   └─ 4.3 Data Flow per Iteration
+
+5. Experiments (≈5–6 pages)
+   ├─ 5.1 Experimental Setup
+   │      - 镜面 12.84×9.45 m, 35 bolts (7×5), 接收器 R=10 m H=20 m
+   │      - 四面镜 N/E/S/W @ 300 m
+   │      - RTX 4070 SUPER, Buie CSR=0.01, 200 iter, lr=4e-4
+   │
+   ├─ 5.2 Main Results: Four-Heliostat Optimization  ← 图+表
+   │      - 表：四面镜 初始 S95 → 最优 S95 → 改善率 → max stroke
+   │      - 图：(a) 收敛曲线 S95 vs iter (4 镜 × 1 图)
+   │           (b) 螺栓行程分布 35-bar chart (4 镜 × 1 图)
+   │
+   ├─ 5.3 Proxy Model Fidelity  ← 验证
+   │      - Error Budget Table（见 §3.1 差距 3）
+   │      - 图：Proxy vs FEA 形变散点 (per-angle)
+   │      - 图：Proxy vs FEA 光斑像素级散点 + 残差图
+   │      - 表：per-angle 形变指标 (RMS/R²/shape_corr/PV ratio)
+   │      - 讨论：为什么 shape_corr >0.95 意味着误差不影响优化方向
+   │
+   ├─ 5.4 Ablation Study  ← 消融
+   │      - 表：消融矩阵（组件 | S95 退化 | 相对影响 %）
+   │        - 自影响修正 ON/OFF
+   │        - NLGEOM-ON vs OFF 重力
+   │        - SPP 32² → 25² → 20² → 16²
+   │        - Sundir 36 → 110 → 334
+   │        - L1 λ scan (Pareto)
+   │      - 图：Sundir 消融 (训练 vs 验证 S95, 3 曲线)
+   │      - 图：SPP 消融 (S95 vs SPP, 收敛稳定性)
+   │
+   ├─ 5.5 Comparison with Baseline Methods  ← 对比
+   │      - 表：Adam vs CMA-ES vs BayesOpt
+   │        (最终 S95 | 评估次数 | wall-clock | S95/千次评估)
+   │      - 图：S95 vs 评估次数 (3 方法 × 1 图)
+   │      - 表：TPS 35-bolt vs Bézier 16-CP vs 椭圆面
+   │        (S95 | 自由度 | 形变 RMS vs 理想面)
+   │
+   ├─ 5.6 Convergence and Robustness  ← 稳健性
+   │      - 图：初始化敏感度 (3 seeds → 收敛到同一解?)
+   │      - 图：lr 扫描 (S95 vs lr, U 型曲线)
+   │      - 图：λ scan → S95 vs 能量 Pareto 前沿
+   │
+   ├─ 5.7 Annual Performance Validation  ← 泛化
+   │      - 表：334 方向全年 S95 分布 (中位数/P5/P25/P75/P95/最差 5%)
+   │      - 确认优化解不只在训练方向有效
+   │
+   └─ 5.8 Performance and Scalability  ← 工程
+          - 表：各阶段 wall-clock breakdown (per-iter)
+          - A5 网格课程加速效果
+          - 讨论：全场面型优化的计算扩展
+
+6. Discussion (≈1 page)
+   ├─ 6.1 为什么梯度优化在 35D 螺栓问题上有优势
+   ├─ 6.2 TPS Proxy 的适用边界 (shape_corr >0.95 的前提)
+   ├─ 6.3 局限：超大变形、材料非线性、热变形耦合
+   ├─ 6.4 对未来全场 10k+ 镜面型优化的启示
+   └─ 6.5 梯度穿越力学→光学域的更广泛意义
+
+7. Conclusion (≈0.5 page)
+   - 贡献重述
+   - 关键数字：四面镜 63–78% S95 改善
+   - 开源与可复现
+
+Supplementary Material (单独 PDF)
+   A. ANSYS APDL Automation Pipeline Documentation
+   B. Sundir Sampling Script and Validation
+   C. Full Parameter Tables
+   D. Additional Convergence Plots
+   E. Code Repository Link
+```
+
+### 4.6 关键图表清单
+
+| # | 图/表 | 章节 | 数据来源 | 状态 |
+|:---:|------|:---:|------|:--:|
+| 1 | TPS φ_b 空间分布示例 | 3.2 | 已有数据 | ✅ 可做 |
+| 2 | 重力分量-倾角曲线 + 双线性插值 | 3.3 | 已有数据 | ✅ 可做 |
+| 3 | **四面镜收敛曲线** (S95 vs iter) | 5.2 | 已有 history.csv | ✅ 可做 |
+| 4 | **螺栓行程分布** (35-bar × 4 镜) | 5.2 | 已有 BEST_BeCP | ✅ 可做 |
+| 5 | Error Budget Table | 5.3 | 部分已有 | 🟡 需整合 |
+| 6 | Proxy vs FEA 形变散点图 (4-5 angles) | 5.3 | North 2 角度已有 | 🟡 需扩展 |
+| 7 | Proxy vs FEA 光斑散点 + 残差 | 5.3 | North 2 角度已有 | 🟡 需扩展 |
+| 8 | **消融矩阵表** | 5.4 | 部分已有 | 🟡 需补实验 |
+| 9 | Sundir 消融图 (train/val S95 vs dirs) | 5.4 | ✅ 已有 | ✅ 可做 |
+| 10 | **Adam vs CMA-ES vs BayesOpt 对比** | 5.5 | ❌ | ❌ 核心实验 |
+| 11 | TPS vs Bézier vs Ellipse 对比 | 5.5 | ellipse 已有 | 🟡 需 Bézier |
+| 12 | 初始化/学习率敏感度 | 5.6 | ❌ | ❌ |
+| 13 | λ-S95 vs 能量 Pareto 前沿 | 5.6 | 仅 λ=0, 0.1 | 🟡 需扫描 |
+| 14 | 全年 S95 分布箱线图 | 5.7 | ❌ | ❌ |
+| 15 | 各阶段耗时 breakdown | 5.8 | 已有 | ✅ 可做 |
 
 ---
 
 ## 5. 投稿策略建议
 
-### 首选：TVCG（通过 IEEE VIS 2027 或 Regular 通道）
+### 5.1 作者画像与投稿难度评估
 
-- **VIS special issue**：截稿通常在每年 3 月（需确认 2027 日期），7 月通知一轮结果，10 月会议
-- **Regular submission**：滚动接受，审稿周期 6–12 个月，没有会议 presentation 机会
-- **建议走 VIS 通道**：有 presentation 曝光、审稿周期可控、且 VIS 鼓励"大胆创新"的偏好与你的方法论特征匹配
+本项目作者为**首次投稿者**，具备以下特点：
 
-### 备选：ACM TOG / SIGGRAPH
-
-- 如果你的实物验证能跟上，TOG 在 computational design/fabrication 赛道上声望更高
-- TOG 对物理仿真精度的要求更苛刻
-
-### 备选：Applied Optics / Optics Express
-
-- 如果侧重光学结果验证，审稿周期短（4–8 周），但影响力不如 TVCG
-- 可作为"保底"选项
-
-### 关键决策点
-
-| 时机 | 决策 |
+| 优势 | 劣势 |
 |------|------|
-| 现在 | 是否投入资源做实物原型？（决定走路径 A 还是 B） |
-| Phase 3 后 | 如果对比实验显示 Adam 优势不明显，是否需要重新设计 framing？ |
-| Phase 4 后 | 根据实验结果的质量决定投稿目标（TVCG vs TOG vs AO） |
+| 工程实现能力强（完整 GPU 管线 + FEA 自动化） | 无英文学术写作经验 |
+| 方法论理解深入（物理 + 数值 + 图形学交叉） | 无学术导师/合作者反馈 |
+| 实验设计系统性强（消融/对比维度思考到位） | 不熟悉审稿 rebuttal 流程 |
+| 创新性真实（机械→光学可微链是首创） | 学术文献覆盖面不够广 |
+
+### 5.2 推荐路线：两步走策略
+
+**不建议以 TVCG 作为首次投稿目标。** 原因：
+- TVCG 接收率 ~22%，一审直接拒稿 ~55%
+- 审稿人对新手痕迹极度敏感（图表规范、文献引用、论述克制度）
+- 被拒后修改再投周期 6–12 个月，对首次投稿者时间成本过高
+
+**建议策略**：
+
+```
+当前 ──→ 第一站: Solar Energy / Applied Optics ──→ 第二站: TVCG
+         (~3–4 个月, 高概率录用)                   (~1 年后, 扩展版)
+```
+
+#### 第一站：Solar Energy（推荐首选）
+
+| 指标 | 数据 |
+|------|------|
+| **JCR** | Q1（IF ~3.5, 中科院 2 区） |
+| **审稿周期** | 8–12 周（快则 6 周收到一审意见） |
+| **主题匹配度** | ⭐⭐⭐⭐⭐ — CSP 定日镜是期刊核心主题范围 |
+| **对首次投稿者** | ⭐⭐⭐⭐ — 审稿标准比 TVCG 更侧重工程实用性 |
+| **页面费** | 无（非 OA 不收版面费） |
+
+**为什么 Solar Energy 是最佳首发目标**：
+1. **主题完美匹配**：定日镜光学优化是 Solar Energy 的读者真正关心的问题
+2. **方法创新性够用**：可微梯度优化 35D 螺栓问题对 SE 读者是显著的 methodological advance
+3. **实验深度已接近**：补完对比实验 (CMA-ES) + 消融 + 误差预算后，实验部分对 SE 绰绰有余
+4. **审稿意见有价值**：即使被拒（概率较低），意见也来自 CSP 领域专家，免费改论文
+5. **发表记录铺垫**：有了 SE 这篇论文，再投 TVCG 时审稿人对你的学术可信度完全不同
+
+**需要调整的地方**：
+- 论文只需 8–10 页（非 12 页）
+- Introduction 需要更多 CSP 工程背景，少一些图形学 framing
+- Related work 加 CSP 定日镜面型优化文献（而非只列图形学管线）
+- 实验部分整编为"工程验证"风格（少一些消融表格，多一些全年性能评估）
+
+#### 备选：Applied Optics
+
+| 指标 | 数据 |
+|------|------|
+| **JCR** | Q2（IF ~1.9, 中科院 3 区） |
+| **审稿周期** | 4–8 周（非常快） |
+| **主题匹配度** | ⭐⭐⭐⭐ — 光学仿真 + 可微优化 |
+| **优点** | 审稿周期短，对方法论文宽容度最高 |
+| **缺点** | 影响力低于 Solar Energy |
+
+#### 第二站：TVCG（有了第一次经验后）
+
+前提条件：
+- 第一篇 Solar Energy 论文已录用/发表
+- 至少 1 次投稿/审稿/rebuttal 经验
+- 如有学术合作者加入更好
+- 内容上做实质扩展（例如：POD-Linear 代理替换 TPS、全场多镜协同、实物缩比验证等）
+
+### 5.3 如果坚持直投 TVCG
+
+需要满足以下全部条件：
+1. **找到有经验的学术合作者**（做过可微渲染或 CSP 发表，有指导博士生经验）
+2. **对比实验全部做完**（CMA-ES + BayesOpt + Bézier 对比）
+3. **有专门时间投入论文写作和图表**（预计 6–8 周 full-time）
+4. **准备好 rebuttal 心理预期**——几乎一定有条件接受而非直接接受，需要逐条回应 ~30 条审稿意见
+
+即使以上条件都满足，首次投稿接受率预估也仅 **30–40%**。
+
+### 5.4 长期规划
+
+| 时间线 | 里程碑 |
+|------|------|
+| 2026 Q3 | 补充实验 + 论文初稿（按 Solar Energy 框架） |
+| 2026 Q4 | 投稿 Solar Energy |
+| 2027 Q1 | 收到一审意见 → 修订 |
+| 2027 Q2 | Solar Energy 录用/发表 |
+| 2027 Q3–Q4 | 基于 SE 论文反馈 + 扩展（POD 代理等）→ 重写 TVCG 版 |
+| 2028 Q1 | 投稿 TVCG VIS 2028 |
+
+这个节奏比"直接冲 TVCG 然后被拒→等一年"要健康得多。
 
 ---
 
-## 6. 参考文献
+## 6. 执行路线图
+
+### Phase 1：基础验证补齐（2–3 周）← 立即开始
+
+| # | 任务 | 工作量 | 输出 |
+|:---:|------|:---:|------|
+| 1.1 | Error Budget Table 整合 | 3 天 | 一张表 + 配套论述 |
+| 1.2 | 渲染器 SPP 外推 + 材料扰动 | 3 天 | 离散化 + 材料误差量级 |
+| 1.3 | North 面型验证扩展到 5 角度 | 1 周 | 5-angle 形变 + 光斑对比 |
+| 1.4 | 全年 334dir S95 评估 | 2 天 | 箱线图 + 分布统计 |
+| 1.5 | 论文图表：基础图表先行制作 | 穿插 | 已可做的 8 张图 |
+
+### Phase 2：对比实验（3–4 周）← 论文核心卖点
+
+| # | 任务 | 工作量 | 输出 |
+|:---:|------|:---:|------|
+| 2.1 | Python black-box wrapper（C++ forward-only 调用） | 3 天 | CMA-ES/BayesOpt 可用的接口 |
+| 2.2 | CMA-ES 对比实验 | 1 周 | 35D 问题收敛曲线 + 评估次数 |
+| 2.3 | BayesOpt 对比实验 | 3 天 | 同上 |
+| 2.4 | Bézier 16-CP 重跑 | 3 天 | TPS vs Bézier 对比 |
+| 2.5 | 正式消融实验（自影响/NLGEOM/SPP） | 1 周 | 消融矩阵表 |
+
+### Phase 3：收敛性与稳健性（1–2 周）
+
+| # | 任务 | 工作量 | 输出 |
+|:---:|------|:---:|------|
+| 3.1 | 初始化敏感度（≥3 seeds） | 3 天 | 多 seed 收敛图 |
+| 3.2 | lr + Adam β 参数扫描 | 1 周 | S95 vs lr U 型曲线 |
+| 3.3 | λ (lambda_energy) 扫描 | 2 天 | Pareto 前沿图 |
+| 3.4 | L3 多种子稳健性 | 2 天 | 随机种子下的解标准差 |
+
+### Phase 4：性能与可选增强（1–2 周）
+
+| # | 任务 | 工作量 | 输出 |
+|:---:|------|:---:|------|
+| 4.1 | A5 网格课程实现 + 验证 | 1 周 | 30-40% 加速数字 |
+| 4.2 | B-spline 25-CP 实验 | 3 天 | scalability 讨论素材 |
+| 4.3 | 6×6 布局对比 | 3 天 | 布局不敏感性论证 |
+
+### Phase 5：论文写作（与 Phase 1–4 并行）
+
+| # | 任务 | 时间 |
+|:---:|------|:---:|
+| 5.1 | Related Work 第一稿 | Week 1–2 |
+| 5.2 | Method 第一稿（已有 CLAUDE.md 材料） | Week 2–4 |
+| 5.3 | 图表制作（与实验进度同步） | Week 1–8 |
+| 5.4 | Experiments 第一稿（Phase 1–2 完成后集中写） | Week 5–8 |
+| 5.5 | Introduction + Discussion + Conclusion | Week 8–9 |
+| 5.6 | 内部修改 + 英文润色 | Week 10–12 |
+
+---
+
+## 7. 参考文献
 
 1. Zhou, Sun, Deng, Zhang. "Computational Caustic Design for Surface Light Source." *IEEE TVCG*, Vol. 32, No. 2, pp. 1911–1927, Feb 2026. DOI: 10.1109/TVCG.2025.3633081.
 2. Shi et al. "SurroFlow: A Flow-Based Surrogate Model for Parameter Space Exploration and Uncertainty Quantification." *IEEE TVCG*, Vol. 31, No. 1, pp. 635–644, Jan 2025. DOI: 10.1109/TVCG.2024.3456372.
@@ -305,7 +655,11 @@ TVCG 鼓励 open practices。准备开源代码、数据、配置是加分项。
 7. Xing, Cantareira et al. "A Review and Analysis of Evaluation Practices in VIS Publications." BELIV 2024. arXiv: 2408.16080.
 8. IEEE VIS 2026 Review Instructions: <https://www.ieeevis.org/year/2026/info/call-participation/review-instructions/>
 9. IEEE VIS 2025 Open Practices: <https://www.content.ieeevis.org/year/2025/info/open-practices/open-practices>
+10. Hansen, Nikolaus. "The CMA Evolution Strategy: A Tutorial." arXiv: 1604.00772, 2016.
+11. 叶金伟, 何采投. "定日镜场地光学效率模拟中的蒙特卡洛光线跟踪方法中时间采样点灵敏度分析研究." *Computer Science and Application*, Vol. 16, No. 3, pp. 96–105, 2026.
 
 ---
 
-> **总结**：当前项目有一条功能完整的管线，但实验深度距离 TVCG 标准差约 **6–12 个月的密集补充**。P0 的三个实验（对比方法、消融、误差预算）是"不做就过不了"的硬门槛，建议从 Phase 1 的 bug 修复和数据重跑开始，逐步推进。
+> **总结**：2026 年 7 月至今的实验密集期已将项目从"管线原型"推进到"实验半成品"阶段。P0/P1 代码优化 100% 完成、sundir 采样系统建立、FEA 验证体系重组、四面镜优化基线确立。剩余工作的重心从"搭架子"转向**"跑对比实验 + 写论文"**——CMA-ES 对比和系统消融是必须跨越的硬门槛。
+>
+> **对于首次投稿者，建议首发 Solar Energy 而非 TVCG**：主题完美匹配、审稿对工程方法更友好、录用率高得多、且为后续 TVCG 投稿提供学术发表记录的背书。无论选择哪个目标期刊，建议从现在开始与实验并行的论文写作——Related Work 早写早暴露文献盲区，Method 部分已有 CLAUDE.md 提供了完善的素材。
