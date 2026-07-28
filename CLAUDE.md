@@ -248,6 +248,39 @@ boltForwardSurface (力学正向) → forwardRender (光追) → computeS95FindL
 
 新增/变更配置键：`ray_cull`(1)、`ray_cull_margin_mrad`(8.0)、`lambda_energy`(0.0)、`max_bolt_stroke`(0.040)、`stroke_regularization`(0.0)、`randomize_seed`(0)、`reflection_only_optimization`(0，停用)。
 
+### 🔴 重力法向耦合修复（2026-07-27, Phase 1）
+
+**致命缺陷修复**：`shaders/bolt_common.slang:125-127` 中重力仅进入表面高度 `y`，不进入导数 `yu/yv`。由于法线由 `yu/yv` 计算，**重力对反射方向从未产生任何影响**——这精确解释了"优化 ≈ 椭圆拟合"的历史结果。
+
+**修复内容**：
+- **数据格式升级**：重力 bin 从单平面 `[w]` (4KB) 扩展为 3 平面 `[w, dw/du, dw/dv]` (12KB)，`gravity_angles.json` 新增 `"format": "w_du_dv_v2"` 标记
+- **Shader 重构**：20 个独立 binding (30–50) 合并为单一 `gravityMerged` buffer (binding 30, 20×3×1024 floats)，`_readGravity3` 通过索引直接访问；`boltSurfaceAtGrid` 新增 `gravityNormalCoupling` 参数
+- **向后兼容**：C++ 侧按文件大小自动检测格式：旧 4KB → padding du/dv=0 + WARNING / 新 12KB → 直接加载
+- **耦合开关**：`gravity_normal_coupling:1`（默认）→ 重力导数进法线；`gravity_normal_coupling:0` → legacy 幻影行为
+
+**⚠️ 历史结果可比性**：2026-07-27 前的结果隐式使用 coupling=0，修复后 coupling=1 的 S95 与之**不可直接对比**。coupling=0 路径保留供消融实验。
+
+**重新生成数据**：`python scripts/generate_proxy_model.py gravity --source-dir data_proxy/ansys_csv --output-dir data_proxy`
+
+### 正则项套件（2026-07-27, Phase 3）
+
+新增配置键，用于形状正则化螺栓优化：
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `anchor_lambda` | 0.0 | λ_s 斜率空间锚定强度；>0 时需 `{name}_anchor.bin`（由 `scripts/lsq_fit_compensated.py` 生成） |
+| `bend_lambda` | 0.0 | λ_b 弯曲能量正则强度（与 anchor 共用 regGram buffer） |
+| `soft_stroke_lambda` | 0.0 | λ_h 软行程墙强度（二次惩罚超出 `max_bolt_stroke` 部分） |
+| `tanh_bound` | 1 | 1=legacy tanh 有界参数化；0=物理空间 Adam + 软墙 |
+
+**闭式补偿**（`scripts/lsq_fit_compensated.py`）：在椭圆 LSQ 拟合基础上叠加斜率空间重力补偿：
+- `h_shape = argmin ||Φh − s_ellipse||²`（标准 LSQ）
+- `h_comp = argmin ||∇(Φh) + ∇ḡ||²`（斜率空间闭式解）
+- `h* = h_shape + h_comp`（组合初始螺栓）
+- 输出锚定 buffer：`[G_slope | G_slope·h*]` (35×36 float32)
+
+`tanh_bound:0` 时 lr 语义为物理步长；tanh 模式内部 `lr_ε = lr/h_max`（`pipeline.cpp:996`），使两种模式的零点物理步长都等于 lr——**两种模式均推荐 lr=4e-4**（修正 2026-07-28：此前"nt 模式建议 1.6e-5"的说明与 lrComp 分支实现矛盾，作废）。
+
 ---
 
 ## 方法论：TPS 代理模型与可微优化管线
@@ -374,7 +407,8 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验报告（2026-07-16） |
 | `train_data/zero_heights_ON/VALIDATION_TABLE.md` | APDL vs GUI 零螺栓重力 22 角度验证表（2026-07-20） |
 | `results_4mirror_200iter/fea_validation/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（优化螺栓，2026-07-20） |
-| `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
+| `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |

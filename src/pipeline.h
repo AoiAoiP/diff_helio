@@ -171,7 +171,9 @@ private:
     // MSE loss: ideal flux target from elliptical surface
     bool m_useMSELoss = false;
     std::vector<float> m_idealFlux;
-    GpuBuffer m_gravityY, m_gravityBins[20], m_yuGrid, m_yvGrid, m_surfaceGradient;
+    GpuBuffer m_gravityY, m_gravityMerged, m_yuGrid, m_yvGrid, m_surfaceGradient;
+    // P3: Regularization buffers (anchor gram matrix + target)
+    GpuBuffer m_regGram, m_anchorTarget;
     GpuBuffer m_tirCountBuf;  // TIR fallback statistics (1 uint32)
     // Phase 5: m_boltGradPartial removed — replaced by 12 KB m_boltGradPartialTile
     GpuBuffer m_boltGradPartialTile;
@@ -181,6 +183,7 @@ private:
     GpuBuffer m_s95State, m_lossAccum;
     std::array<float,3> m_lastSunDir = {0,1,0};
     uint32_t m_currentIteration = 0;  // P1-L3: per-iteration seed
+    int m_dbgEvalRound = 0;           // BEZIER_DEBUG_EVAL: runValidation call counter
     static constexpr uint32_t kSunBatchSize = 6;
 
     // Descriptor layouts (one shared Bezier layout, one shared bolt layout)

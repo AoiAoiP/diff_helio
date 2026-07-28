@@ -1,0 +1,8 @@
+{
+ "mirror": "East_300m",
+ "layout": "float32[NB*NB] G row-major, then float32[NB] G@h*",
+ "nb": 35,
+ "sundir": "110_sundir_paper.txt",
+ "h_shape_pv_mm": 34.94305953116494,
+ "h_comp_pv_mm": 1.2443227185872068
+}

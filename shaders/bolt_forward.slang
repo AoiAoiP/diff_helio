@@ -3,7 +3,7 @@ module bolt_forward;
 import common;
 import bolt_common;
 
-struct BoltSurfacePC { uint numBolts; uint disableGravity; uint sunBatchCount; uint _pad0; };
+struct BoltSurfacePC { uint numBolts; uint disableGravity; uint sunBatchCount; uint gravityNormalCoupling; };
 [[vk::push_constant]] BoltSurfacePC pushConst;
 
 [shader("compute")]
@@ -20,7 +20,8 @@ void computeBoltSurface(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupID)
 
     float y, yu, yv;
     float3 nrm;
-    boltSurfaceAtGrid(tid.x, tid.y, pushConst.numBolts, lo, hi, t, pushConst.disableGravity, y, yu, yv, nrm);
+    boltSurfaceAtGrid(tid.x, tid.y, pushConst.numBolts, lo, hi, t,
+        pushConst.disableGravity, pushConst.gravityNormalCoupling, y, yu, yv, nrm);
 
     uint idx = si * kGridSize * kGridSize + tid.y * kGridSize + tid.x;
     yGrid[idx] = y; yuGrid[idx] = yu; yvGrid[idx] = yv;

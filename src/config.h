@@ -71,6 +71,8 @@ struct Config {
     float boltMargin = 0.08f;              // edge margin fraction (0..0.5)
     bool enableMSELoss = false;          // MSE loss: match ideal elliptical flux pixel-by-pixel
     bool disableGravity = false;       // if true, zero out gravity in proxy model
+    // P1: gravity normal coupling — derivatives enter surface normal (0=legacy phantom)
+    bool gravityNormalCoupling = true;
     std::string influenceDataPath = "data_proxy";
     ProxyMode proxyMode = ProxyMode::TPS;
 
@@ -92,6 +94,12 @@ struct Config {
     bool reflectionOnlyOptimization = false;
     // P1-L3: per-iteration seed randomization (0 = fixed seed, 1 = randomize)
     bool randomizeSeed = false;
+
+    // P3: Regularization suite (activated in Phase 3, declared now)
+    float anchorLambda = 0.0f;         // lambda_s: shape anchor strength
+    float bendLambda = 0.0f;            // lambda_b: bending energy strength
+    float softStrokeLambda = 0.0f;      // lambda_h: soft stroke wall strength
+    bool tanhBound = true;              // 1=legacy tanh; 0=physical space + soft wall
 
     // A1: per-ray angular pre-cull — skip Box-Muller + glass + sunshape for
     // rays whose macro-normal reflection falls outside sun support + margin

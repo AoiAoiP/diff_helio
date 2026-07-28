@@ -346,7 +346,8 @@ Proxy vs FEA 偏差与方向 6 一致（~2.8–3.3 mm RMS, shape_corr 0.95–0.9
 |------|------|
 | `CLAUDE.md` | 开发者参考：编译、架构、方法论、参数速查 |
 | `results_4mirror_200iter/EXPERIMENT_REPORT.md` | 四面镜 200-iter 优化实验完整报告 |
-| `docs/tvcg_submission_gap_analysis.md` | TVCG 投稿差距分析与补充实验规划 |
+| `docs/submission_strategy_and_outline.md` | 投稿方向分析 + 论文大纲设计 + 后续补充工作（2026-07-28 取代原 TVCG 差距分析） |
+| `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作，§3 起为大纲（2026-07-28） |
 | `docs/plate_proxy_replacement_research.md` | TPS 代理模型替代方案调研（POD-ROM / Green 函数 / 模态展开 / PINN） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 方法论对比与本项目 P0/P1/P2 优化清单 |
 | `analysis/p0_validation_report.md` | P0（A1 预裁剪 + L1 效率项）位精确一致性与时空开销验证 |

@@ -31,8 +31,7 @@ results/
 results_*/
 validation_*/
 
-# Design documents
-docs/
+# Design documents are tracked since 2026-07-28 (submission materials + experiment handoff)
 
 wang/
 data_proxy_mode2/

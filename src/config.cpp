@@ -135,6 +135,7 @@ Config loadConfig(const std::string &path) {
     cfg.boltInitFile = extractString(json, "bolt_init_file", "");
     cfg.boltInitDir = extractString(json, "bolt_init_dir", "data/init/");
     cfg.disableGravity = extractInt(json, "disable_gravity", 0) != 0;
+    cfg.gravityNormalCoupling = extractInt(json, "gravity_normal_coupling", 1) != 0;
 
     cfg.maxBoltStroke = extractFloat(json, "max_bolt_stroke", 0.040f);
     cfg.strokeRegularization = extractFloat(json, "stroke_regularization", 0.0f);
@@ -144,6 +145,12 @@ Config loadConfig(const std::string &path) {
     cfg.rayCull = extractInt(json, "ray_cull", 1) != 0;
     cfg.rayCullMarginMrad = extractFloat(json, "ray_cull_margin_mrad", 8.0f);
     cfg.lambdaEnergy = extractFloat(json, "lambda_energy", 0.0f);
+
+    // P3: Regularization suite
+    cfg.anchorLambda = extractFloat(json, "anchor_lambda", 0.0f);
+    cfg.bendLambda = extractFloat(json, "bend_lambda", 0.0f);
+    cfg.softStrokeLambda = extractFloat(json, "soft_stroke_lambda", 0.0f);
+    cfg.tanhBound = extractInt(json, "tanh_bound", 1) != 0;
 
     float csr = cfg.csr;
     cfg.buieThetaInner = 0.00465f;

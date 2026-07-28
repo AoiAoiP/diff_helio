@@ -211,9 +211,24 @@ def generate_influence_data(output_dir='data_proxy', reg=1e-6, grid_size=32,
 # (inlined from scripts/train_residual/precompute_gravity_bins.py)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def precompute_gravity_bins(source_dir, output_dir, grid_size=32, angles=None):
-    """Convert ANSYS CSV node dumps to gravity_{angle}deg.bin + gravity_angles.json."""
+def precompute_gravity_bins(source_dir, output_dir, grid_size=32, angles=None,
+                            deriv_output=True, deriv_smooth=True):
+    """Convert ANSYS CSV node dumps to gravity_{angle}deg.bin + gravity_angles.json.
+
+    When deriv_output=True (default), each .bin file contains 3 planes:
+      [w (GS*GS)] [dw/du (GS*GS)] [dw/dv (GS*GS)]
+    for a total of 3 * GS * GS float32 values. dw/du and dw/dv are computed
+    via central differences (with optional sigma=1px Gaussian pre-smoothing)
+    to give the physical slope in m/m at each grid point.
+
+    When deriv_output=False, legacy single-plane [w] format is written.
+    """
     from scipy.interpolate import griddata as gd
+    try:
+        from scipy.ndimage import gaussian_filter as gauss_filt
+        _has_ndimage = True
+    except ImportError:
+        _has_ndimage = False
 
     if angles is None:
         angles = DEFAULT_ANGLES_20BIN
@@ -227,8 +242,17 @@ def precompute_gravity_bins(source_dir, output_dir, grid_size=32, angles=None):
     X_flat = (Ug - 0.5) * W
     Z_flat = (Vg - 0.5) * L
 
+    # Cell spacing for physical derivative computation (m)
+    dx = W / GS
+    dz = L / GS
+
     print(f"Gravity bins: {GS}x{GS}  source: {source_dir}  output: {output_dir}")
-    metadata = {"angles": {}, "grid_size": GS, "plate_W_m": W, "plate_L_m": L}
+    if deriv_output:
+        print(f"  Derivative output: 3-plane [w, dw/du, dw/dv] (smooth={deriv_smooth})")
+    metadata = {"angles": {}, "grid_size": GS, "plate_W_m": W, "plate_L_m": L,
+                "format": "w_du_dv_v2" if deriv_output else "w_legacy",
+                "planes": 3 if deriv_output else 1,
+                "plane_layout": "w, dw/du, dw/dv" if deriv_output else "w"}
 
     for ang in angles:
         cos_th = np.cos(np.deg2rad(ang))
@@ -276,19 +300,55 @@ def precompute_gravity_bins(source_dir, output_dir, grid_size=32, angles=None):
 
         ang_key = int(ang) if ang == int(ang) else ang
         out_path = os.path.join(output_dir, f'gravity_{ang_key}deg.bin')
-        grid.astype(np.float32).ravel().tofile(out_path)
 
-        metadata["angles"][str(ang_key)] = {
-            "cos_theta": float(cos_th),
-            "pv_mm": float(np.ptp(grid) * 1000),
-            "min_mm": float(grid.min() * 1000),
-            "max_mm": float(grid.max() * 1000),
-            "nan_filled": n_nan,
-            "source": f"{source_dir}/node_dump_{ang_key}deg.csv",
-        }
-        print(f"  theta={ang}deg: PV={np.ptp(grid)*1000:.1f}mm  "
-              f"range=[{grid.min()*1000:.1f},{grid.max()*1000:.1f}]mm  "
-              f"NaN={n_nan}  ->  gravity_{ang_key}deg.bin")
+        if deriv_output:
+            # Compute physical slope derivatives (m/m) via central differences
+            grid_w = grid  # (GS, GS), axis0=v(z), axis1=u(x)
+
+            if deriv_smooth and _has_ndimage:
+                grid_w = gauss_filt(grid_w, sigma=1.0)
+
+            # dw/du = dw/dx (physical), dw/dv = dw/dz (physical)
+            dw_du, dw_dv_native = np.gradient(grid_w, axis=(1, 0))
+            dw_du /= dx   # m/m in x-direction
+            dw_dv = dw_dv_native / dz  # m/m in z-direction
+
+            # Write 3-plane binary: [w | dw/du | dw/dv]
+            packed = np.concatenate([
+                grid.ravel(),
+                dw_du.ravel(),
+                dw_dv.ravel(),
+            ]).astype(np.float32)
+            packed.tofile(out_path)
+
+            slope_rms = float(np.sqrt(np.mean(dw_du**2 + dw_dv**2)))
+            metadata["angles"][str(ang_key)] = {
+                "cos_theta": float(cos_th),
+                "pv_mm": float(np.ptp(grid) * 1000),
+                "min_mm": float(grid.min() * 1000),
+                "max_mm": float(grid.max() * 1000),
+                "slope_rms_mrad": slope_rms * 1000,
+                "nan_filled": n_nan,
+                "source": f"{source_dir}/node_dump_{ang_key}deg.csv",
+            }
+            print(f"  theta={ang}deg: PV={np.ptp(grid)*1000:.1f}mm  "
+                  f"slopeRMS={slope_rms*1000:.2f}mrad  "
+                  f"NaN={n_nan}  ->  gravity_{ang_key}deg.bin (3-plane)")
+        else:
+            # Legacy single-plane output
+            grid.astype(np.float32).ravel().tofile(out_path)
+
+            metadata["angles"][str(ang_key)] = {
+                "cos_theta": float(cos_th),
+                "pv_mm": float(np.ptp(grid) * 1000),
+                "min_mm": float(grid.min() * 1000),
+                "max_mm": float(grid.max() * 1000),
+                "nan_filled": n_nan,
+                "source": f"{source_dir}/node_dump_{ang_key}deg.csv",
+            }
+            print(f"  theta={ang}deg: PV={np.ptp(grid)*1000:.1f}mm  "
+                  f"range=[{grid.min()*1000:.1f},{grid.max()*1000:.1f}]mm  "
+                  f"NaN={n_nan}  ->  gravity_{ang_key}deg.bin")
 
     # Save metadata
     meta_path = os.path.join(output_dir, 'gravity_angles.json')
@@ -577,7 +637,8 @@ def run_ansys_gravity_bins(layout_path, output_dir, grid_size=32, angles=None,
 
     # Convert CSV → gravity bins
     if not dry_run:
-        precompute_gravity_bins(csv_dir, out_dir, GS, angles)
+        precompute_gravity_bins(csv_dir, out_dir, GS, angles,
+                                deriv_output=True, deriv_smooth=True)
 
     print(f"\n  Output: {out_dir}/")
     print(f"  CSVs:   {csv_dir}/")
@@ -666,7 +727,9 @@ def cmd_tps(args):
 
 def cmd_gravity(args):
     """Handle 'gravity' subcommand."""
-    precompute_gravity_bins(args.source_dir, args.output_dir, args.grid_size, args.angles)
+    precompute_gravity_bins(args.source_dir, args.output_dir, args.grid_size, args.angles,
+                            deriv_output=getattr(args, 'deriv_output', True),
+                            deriv_smooth=getattr(args, 'deriv_smooth', True))
 
 
 def cmd_gravity_ansys(args):
@@ -697,7 +760,9 @@ def cmd_all(args):
             args.bolt_layout, out, args.grid_size, args.gravity_angles,
             args.ansys_exe, args.keep_temp, args.dry_run)
     else:
-        precompute_gravity_bins(args.gravity_source, out, args.grid_size, args.gravity_angles)
+        precompute_gravity_bins(args.gravity_source, out, args.grid_size, args.gravity_angles,
+                                deriv_output=getattr(args, 'deriv_output', True),
+                                deriv_smooth=getattr(args, 'deriv_smooth', True))
 
     # Validate
     print(f"\n{'='*60}")
@@ -742,6 +807,10 @@ def main():
                          help='Dir with node_dump_{ang}deg.csv (default: <output-dir>/ansys_csv)')
     sp_grav.add_argument('--angles', type=float, nargs='+', default=DEFAULT_ANGLES_20BIN,
                          help='Tilt angles in degrees (default: 20-bin 10-80)')
+    sp_grav.add_argument('--deriv-output', type=lambda x: x.lower() in ('1','true','yes'), default=True,
+                         help='Output 3-plane [w, dw/du, dw/dv] gravity bins (default: true)')
+    sp_grav.add_argument('--deriv-smooth', type=lambda x: x.lower() in ('1','true','yes'), default=True,
+                         help='Gaussian sigma=1px pre-smooth before derivative (default: true)')
 
     # ── gravity-ansys ──
     sp_ga = sub.add_parser('gravity-ansys', parents=[shared],
@@ -772,6 +841,10 @@ def main():
                         help='Keep temporary ANSYS working files')
     sp_all.add_argument('--dry-run', action='store_true',
                         help='Generate APDL files but do not run ANSYS')
+    sp_all.add_argument('--deriv-output', type=lambda x: x.lower() in ('1','true','yes'), default=True,
+                        help='Output 3-plane [w, dw/du, dw/dv] gravity bins (default: true)')
+    sp_all.add_argument('--deriv-smooth', type=lambda x: x.lower() in ('1','true','yes'), default=True,
+                        help='Gaussian sigma=1px pre-smooth before derivative (default: true)')
 
     # ── all-ansys (convenience alias) ──
     sp_aa = sub.add_parser('all-ansys', parents=[shared],

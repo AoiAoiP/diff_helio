@@ -1,0 +1,13 @@
+{
+  "sun_train_file": "data/36_sundir_fast.txt",
+  "ellipse_file": "data/ellipse_east_300m.txt",
+  "use_bolt": 1, "num_bolts": 35, "num_bolts_x": 7, "num_bolts_z": 5,
+  "bolt_margin": 0.08, "use_bspline": 0,
+  "influence_data_path": "data_proxy",
+  "iterations": 1, "learning_rate": 0.0, "min_learning_rate": 0.0,
+  "bolt_init_file": "auto", "bolt_init_dir": "data/init_lsq/",
+  "sun_type": "buie", "csr": 0.01,
+  "gravity_normal_coupling": 0,
+  "output_dir": "results_tmp_east",
+  "samplePoolPow": 26
+}

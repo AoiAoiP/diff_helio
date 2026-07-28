@@ -1,0 +1,8 @@
+{
+ "mirror": "South_900m",
+ "layout": "float32[NB*NB] G row-major, then float32[NB] G@h*",
+ "nb": 35,
+ "sundir": "36_sundir_fast.txt",
+ "h_shape_pv_mm": 17.056728161464136,
+ "h_comp_pv_mm": 0.8461919615815492
+}

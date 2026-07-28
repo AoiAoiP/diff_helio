@@ -398,11 +398,10 @@ void BezierPipeline::createBoltPipelines() {
     bindings.push_back(sb(23)); // yuGrid
     bindings.push_back(sb(24)); // yvGrid
     bindings.push_back(sb(25)); // surfaceGradient
+    bindings.push_back(sb(26)); // regGram (P3: anchor Gram matrix)
+    bindings.push_back(sb(27)); // anchorTarget (P3: G@h*)
     bindings.push_back(sb(29)); // rayValidity (P2)
-    bindings.push_back(sb(30)); // gravityBase (legacy, kept for compat)
-    // Bindings 31-50: multi-angle FEA gravity bins (10/14/18/.../78/80 deg)
-    for (uint32_t b = 31; b <= 50; b++)
-        bindings.push_back(sb(b));
+    bindings.push_back(sb(30)); // gravityMerged (20 bins × 3 planes, since 2026-07-27)
     bindings.push_back(sb(52)); // s95State (GPU S95 level)
     bindings.push_back(sb(53)); // lossAccumFixed (GPU scalar loss)
     bindings.push_back(sb(55)); // activePixelList (A1: sparse culling)
@@ -465,7 +464,7 @@ void BezierPipeline::createBoltPipelines() {
     m_pipeBoltProject   = createPipe(m_spvBoltProject,   "main", sizeof(uint32_t) * 4);  // BoltBackwardPC
     m_pipeBoltClearSurface = createPipe(m_spvBoltClearSurface, "main", 0);
     // AdamBoltPC: lr(4)+beta1(4)+beta2(4)+eps(4)+iterF(4)+numBolts:uint(4)+hMax(4)+lambda(4)=32B
-    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", 32);
+    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", 48);  // P3: 12 floats
     // P1-A2: specialized sunshape pipelines
     for (int i = 0; i < 3; i++) {
         m_pipeForwardTyped[i]     = createPipe(m_spvForwardTyped[i],     "main", 0);
@@ -493,27 +492,72 @@ void BezierPipeline::createBoltBuffers() {
     m_surfaceGradient = m_app.createBuffer(gridPts * 3u * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
     m_gravityY = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
 
-    // Load 20-bin gravity angles (hardcoded, must match data_proxy/ and shaders/bolt_common.slang)
+    // Load 20-bin merged gravity buffer (3-plane format since 2026-07-27)
+    // Layout: 20 bins × 3 planes (w, dw/du, dw/dv) × gridPts floats
+    // Old single-plane format auto-detected and padded with zero slopes.
     {
         const int gravityAngles[20] = {10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
                                         50, 54, 58, 62, 66, 70, 73, 76, 78, 80};
+        const size_t planeSize = gridPts * sizeof(float);          // 4096
+        const size_t binSize3 = 3 * planeSize;                      // 12288 (new format)
+        const size_t mergedSize = 20 * binSize3;                    // 245760
+        std::vector<float> merged(20 * 3 * gridPts, 0.0f);
+        bool anyLegacy = false;
+
         for (int i = 0; i < 20; i++) {
-            m_gravityBins[i] = m_app.createBuffer(gridPts * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-            std::string gravPath = m_cfg.influenceDataPath + "/gravity_" + std::to_string(gravityAngles[i]) + "deg.bin";
-            std::ifstream fg(gravPath, std::ios::binary);
-            if (fg) {
-                std::vector<float> gData(gridPts);
-                fg.read(reinterpret_cast<char*>(gData.data()), gridPts * sizeof(float));
-                m_app.uploadBuffer(m_gravityBins[i], gData.data(), gridPts * sizeof(float));
-                fmt::print("  Loaded gravity_{}deg.bin (PV={:.3f} mm)\n",
-                    gravityAngles[i],
-                    (*std::max_element(gData.begin(), gData.end()) - *std::min_element(gData.begin(), gData.end())) * 1000.0f);
-            } else {
+            std::string gravPath = m_cfg.influenceDataPath + "/gravity_"
+                                 + std::to_string(gravityAngles[i]) + "deg.bin";
+            std::ifstream fg(gravPath, std::ios::binary | std::ios::ate);
+            size_t fileSize = 0;
+            if (fg) fileSize = fg.tellg();
+            fg.seekg(0);
+
+            float *dst = merged.data() + i * 3 * gridPts;  // base of this bin
+
+            if (!fg) {
                 fmt::print("  WARNING: no gravity_{}deg.bin, using zeros\n", gravityAngles[i]);
-                std::vector<float> zeros(gridPts, 0.0f);
-                m_app.uploadBuffer(m_gravityBins[i], zeros.data(), gridPts * sizeof(float));
+            } else if (fileSize == binSize3) {
+                // New 3-plane format: read directly
+                std::vector<float> gData(3 * gridPts);
+                fg.read(reinterpret_cast<char*>(gData.data()), binSize3);
+                std::copy(gData.begin(), gData.end(), dst);
+                float wPV = 0;
+                for (size_t j = 0; j < gridPts; j++) {
+                    float v = gData[j];
+                    if (j == 0) wPV = 0;
+                    else { float mn = std::min(wPV, v); float mx = std::max(wPV, v); (void)mn; (void)mx; }
+                }
+                // compute PV from w-plane only
+                auto [wMin, wMax] = std::minmax_element(gData.begin(), gData.begin() + gridPts);
+                fmt::print("  Loaded gravity_{}deg.bin (3-plane, wPV={:.3f} mm)\n",
+                    gravityAngles[i], (*wMax - *wMin) * 1000.0f);
+            } else if (fileSize == planeSize) {
+                // Legacy single-plane format: read w-plane, pad du/dv with zeros
+                anyLegacy = true;
+                std::vector<float> gData(gridPts);
+                fg.read(reinterpret_cast<char*>(gData.data()), planeSize);
+                std::copy(gData.begin(), gData.end(), dst);
+                // du/dv planes (dst+gridPts, dst+2*gridPts) remain zero → legacy phantom behavior
+                fmt::print("  Loaded gravity_{}deg.bin (legacy 1-plane, du/dv=0; PV={:.3f} mm)\n",
+                    gravityAngles[i],
+                    (*std::max_element(gData.begin(), gData.end())
+                     - *std::min_element(gData.begin(), gData.end())) * 1000.0f);
+            } else {
+                fmt::print("  ERROR: gravity_{}deg.bin size {} unexpected (expected {} or {})\n",
+                           gravityAngles[i], fileSize, planeSize, binSize3);
+                throw std::runtime_error("Gravity bin size mismatch: " + gravPath);
             }
         }
+
+        if (anyLegacy) {
+            fmt::print("  WARNING: legacy gravity bins detected (du/dv=0). "
+                       "Regenerate with: python scripts/generate_proxy_model.py gravity\n");
+        }
+
+        m_gravityMerged = m_app.createBuffer(mergedSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        m_app.uploadBuffer(m_gravityMerged, merged.data(), mergedSize);
+        fmt::print("  Uploaded merged gravity buffer ({} bins × 3 planes × {} pts = {} floats)\n",
+                   20, gridPts, 20 * 3 * gridPts);
     }
 
     // Load influence data from binary files (TPS or POD-Linear: same .bin format)
@@ -545,6 +589,19 @@ void BezierPipeline::createBoltBuffers() {
     ok = loadBin("influence_phi_v.bin", m_influencePhiV) && ok;
     ok = loadBin("gravity_y.bin", m_gravityY) && ok;
     if (!ok) throw std::runtime_error("Failed to load influence data. Run scripts/generate_proxy_model.py or scripts/pod_train.py first.");
+
+    // Anchor buffers (regGram + anchorTarget, bindings 26/27): zero-filled dummies so the
+    // descriptor set is always valid. The real per-mirror anchor data is loaded in optimize()
+    // after the bolt init path is resolved — each mirror has its own G matrix and target.
+    {
+        size_t gramSize = n * n * sizeof(float);
+        size_t targetSize = n * sizeof(float);
+        m_regGram = m_app.createBuffer(gramSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        m_anchorTarget = m_app.createBuffer(targetSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        std::vector<float> zeros(n * n + n, 0.0f);
+        m_app.uploadBuffer(m_regGram, zeros.data(), gramSize);
+        m_app.uploadBuffer(m_anchorTarget, zeros.data() + n * n, targetSize);
+    }
 
     // Phase 5: gradPartialTile (fixed-point int, per-grid-point, 12 KB) replaces 386 MB boltGradPartial
     m_boltGradPartialTile = m_app.createBuffer(gridPts * 3u * sizeof(int32_t),
@@ -592,28 +649,10 @@ void BezierPipeline::createBoltBuffers() {
         {m_yuGrid.buffer, 0, m_yuGrid.size},                 // 23
         {m_yvGrid.buffer, 0, m_yvGrid.size},                 // 24
         {m_surfaceGradient.buffer, 0, m_surfaceGradient.size}, // 25
+        {m_regGram.buffer, 0, m_regGram.size},                 // 26: P3 anchor Gram
+        {m_anchorTarget.buffer, 0, m_anchorTarget.size},       // 27: P3 G@h*
         {m_rayValidity.buffer, 0, m_rayValidity.size},         // 29
-        {m_gravityBins[0].buffer, 0, m_gravityBins[0].size},   // 30: gravityBase (legacy)
-        {m_gravityBins[0].buffer, 0, m_gravityBins[0].size},   // 31: gravityBin10
-        {m_gravityBins[1].buffer, 0, m_gravityBins[1].size},   // 32: gravityBin14
-        {m_gravityBins[2].buffer, 0, m_gravityBins[2].size},   // 33: gravityBin18
-        {m_gravityBins[3].buffer, 0, m_gravityBins[3].size},   // 34: gravityBin22
-        {m_gravityBins[4].buffer, 0, m_gravityBins[4].size},   // 35: gravityBin26
-        {m_gravityBins[5].buffer, 0, m_gravityBins[5].size},   // 36: gravityBin30
-        {m_gravityBins[6].buffer, 0, m_gravityBins[6].size},   // 37: gravityBin34
-        {m_gravityBins[7].buffer, 0, m_gravityBins[7].size},   // 38: gravityBin38
-        {m_gravityBins[8].buffer, 0, m_gravityBins[8].size},   // 39: gravityBin42
-        {m_gravityBins[9].buffer, 0, m_gravityBins[9].size},   // 40: gravityBin46
-        {m_gravityBins[10].buffer, 0, m_gravityBins[10].size}, // 41: gravityBin50
-        {m_gravityBins[11].buffer, 0, m_gravityBins[11].size}, // 42: gravityBin54
-        {m_gravityBins[12].buffer, 0, m_gravityBins[12].size}, // 43: gravityBin58
-        {m_gravityBins[13].buffer, 0, m_gravityBins[13].size}, // 44: gravityBin62
-        {m_gravityBins[14].buffer, 0, m_gravityBins[14].size}, // 45: gravityBin66
-        {m_gravityBins[15].buffer, 0, m_gravityBins[15].size}, // 46: gravityBin70
-        {m_gravityBins[16].buffer, 0, m_gravityBins[16].size}, // 47: gravityBin73
-        {m_gravityBins[17].buffer, 0, m_gravityBins[17].size}, // 48: gravityBin76
-        {m_gravityBins[18].buffer, 0, m_gravityBins[18].size}, // 49: gravityBin78
-        {m_gravityBins[19].buffer, 0, m_gravityBins[19].size}, // 50: gravityBin80
+        {m_gravityMerged.buffer, 0, m_gravityMerged.size},     // 30: gravityMerged
         {m_sunBatchFlat.buffer, 0, m_sunBatchFlat.size},       // 51: sunBatchFlat (Phase 2)
         {m_activePixelList.buffer, 0, m_activePixelList.size}, // 55: activePixelList (A1)
         {m_s95State.buffer, 0, m_s95State.size},               // 52: s95State (GPU S95)
@@ -625,8 +664,8 @@ void BezierPipeline::createBoltBuffers() {
         {VK_NULL_HANDLE, m_fluxGradient.view, VK_IMAGE_LAYOUT_GENERAL},  // 12
     };
 
-    std::vector<VkWriteDescriptorSet> writes(52);
-    for (int i = 0; i < 52; i++) {
+    std::vector<VkWriteDescriptorSet> writes(34);
+    for (int i = 0; i < 34; i++) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].dstArrayElement = 0;
@@ -657,36 +696,36 @@ void BezierPipeline::createBoltBuffers() {
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[i].pBufferInfo = &sbInfos[10 + (i - 17)];
     }
-    // Binding 29: rayValidity
-    writes[26].dstBinding = 29;
+    // P3: Bindings 26/27 (regGram + anchorTarget)
+    writes[26].dstBinding = 26;
     writes[26].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[26].pBufferInfo = &sbInfos[19];  // rayValidity
-    // Binding 30: gravityBase (legacy compat, now points to gravityBin0)
-    writes[27].dstBinding = 30;
+    writes[26].pBufferInfo = &sbInfos[19];  // regGram
+    writes[27].dstBinding = 27;
     writes[27].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[27].pBufferInfo = &sbInfos[20];  // gravityBins[0]
-    // Bindings 31-50: 20 gravity bins
-    for (int gi = 0; gi < 20; gi++) {
-        uint32_t wi = 28u + (uint32_t)gi;
-        writes[wi].dstBinding = 31u + (uint32_t)gi;
-        writes[wi].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[wi].pBufferInfo = &sbInfos[21 + gi];
-    }
+    writes[27].pBufferInfo = &sbInfos[20];  // anchorTarget
+    // Binding 29: rayValidity
+    writes[28].dstBinding = 29;
+    writes[28].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[28].pBufferInfo = &sbInfos[21];  // rayValidity
+    // Binding 30: gravityMerged (20 bins × 3 planes, since 2026-07-27)
+    writes[29].dstBinding = 30;
+    writes[29].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[29].pBufferInfo = &sbInfos[22];  // gravityMerged
     // Binding 51: sunBatchFlat (Phase 2)
-    writes[48].dstBinding = 51;
-    writes[48].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[48].pBufferInfo = &sbInfos[41];
+    writes[30].dstBinding = 51;
+    writes[30].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[30].pBufferInfo = &sbInfos[23];
     // Binding 55: activePixelList (A1: sparse culling)
-    writes[49].dstBinding = 55;
-    writes[49].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[49].pBufferInfo = &sbInfos[42];
+    writes[31].dstBinding = 55;
+    writes[31].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[31].pBufferInfo = &sbInfos[24];
     // Binding 52/53: GPU S95 state + loss accumulator
-    writes[50].dstBinding = 52;
-    writes[50].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[50].pBufferInfo = &sbInfos[43];
-    writes[51].dstBinding = 53;
-    writes[51].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[51].pBufferInfo = &sbInfos[44];
+    writes[32].dstBinding = 52;
+    writes[32].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[32].pBufferInfo = &sbInfos[25];
+    writes[33].dstBinding = 53;
+    writes[33].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[33].pBufferInfo = &sbInfos[26];
     vkUpdateDescriptorSets(m_app.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     m_boltBuffersCreated = true;
@@ -731,8 +770,8 @@ void BezierPipeline::boltForwardSurface(const std::vector<std::array<float,3>>& 
     m_app.uploadBuffer(m_sunBatchFlat, batch.data(), batch.size()*sizeof(float));
     auto pass=m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeBoltSurface);
-    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t _pad;}pc;
-    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=batchCount;pc._pad=0;
+    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t gravityNormalCoupling;}pc;
+    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=batchCount;pc.gravityNormalCoupling=m_cfg.gravityNormalCoupling?1u:0u;
     m_app.pushConstants(pass.cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
     m_app.dispatch(pass.cmd, 1, 1, batchCount);
     m_app.pipelineBarrier(pass.cmd);
@@ -748,8 +787,8 @@ void BezierPipeline::boltForwardSurface(float cosTheta) {
     m_app.uploadBuffer(m_sunBatchFlat, batch.data(), 8*sizeof(float));
     auto pass=m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeBoltSurface);
-    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t _pad;}pc;
-    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=1;pc._pad=0;
+    struct{uint32_t numBolts;uint32_t disableGravity;uint32_t sunBatchCount;uint32_t gravityNormalCoupling;}pc;
+    pc.numBolts=m_cfg.numBolts;pc.disableGravity=m_cfg.disableGravity?1u:0u;pc.sunBatchCount=1;pc.gravityNormalCoupling=m_cfg.gravityNormalCoupling?1u:0u;
     m_app.pushConstants(pass.cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
     m_app.dispatch(pass.cmd, 1, 1, 1);
     m_app.pipelineBarrier(pass.cmd);
@@ -873,11 +912,11 @@ void BezierPipeline::boltBackwardPassCmd(VkCommandBuffer cmd) {
 // Phase 2: Surface forward dispatch (caller uploads sunBatchFlat before pass)
 void BezierPipeline::boltForwardSurfaceCmd(VkCommandBuffer cmd, uint32_t batchCount) {
     m_app.bindPipeline(cmd, m_pipeBoltSurface);
-    struct { uint32_t numBolts; uint32_t disableGravity; uint32_t sunBatchCount; uint32_t _pad; } pc;
+    struct { uint32_t numBolts; uint32_t disableGravity; uint32_t sunBatchCount; uint32_t gravityNormalCoupling; } pc;
     pc.numBolts = m_cfg.numBolts;
     pc.disableGravity = m_cfg.disableGravity ? 1u : 0u;
     pc.sunBatchCount = batchCount;
-    pc._pad = 0;
+    pc.gravityNormalCoupling = m_cfg.gravityNormalCoupling ? 1u : 0u;
     m_app.pushConstants(cmd, m_pipeBoltSurface.layout, &pc, sizeof(pc));
     m_app.dispatch(cmd, 1, 1, batchCount);
     m_app.pipelineBarrier(cmd);
@@ -951,18 +990,27 @@ void BezierPipeline::boltAdamStep(uint32_t iteration) {
     // P1-L4: compensate lr for tanh parameterization scaling.
     // dL/deps = dL/dh * hMax * sech²(eps), so lr_eps = lr / hMax preserves
     // the physical step magnitude. The sech² factor naturally softens near bounds.
+    // P3: when tanhBound==0 the shader updates physical h directly — lr is
+    // already the physical step size, so NO hMax compensation (would be 25x too large).
     float hMax = std::max(m_cfg.maxBoltStroke, 1e-6f);
-    float lrComp = lr / hMax;
-    // Layout: lr, beta1, beta2, eps, iterF, numBolts(uint), hMax, lambdaStroke = 32B
-    float pc[8] = {
+    float lrComp = m_cfg.tanhBound ? (lr / hMax) : lr;
+    // Layout: lr, beta1, beta2, eps, iterF, numBolts(uint), hMax, lambdaStroke,
+    //         lambdaAnchor, lambdaBend, lambdaSoft, tanhBound(uint) = 48B
+    float pc[12] = {
         lrComp, m_cfg.beta1, m_cfg.beta2, m_cfg.adamEpsilon,
         0.0f,  // pc[4]=iterF placeholder (overwritten below)
         0.0f,  // pc[5] placeholder (numBolts via memcpy)
         hMax,
-        m_cfg.strokeRegularization
+        m_cfg.strokeRegularization,  // pc[7]
+        m_cfg.anchorLambda,           // pc[8]
+        m_cfg.bendLambda,             // pc[9]
+        m_cfg.softStrokeLambda,       // pc[10]
+        0.0f                          // pc[11]=tanhBound (via memcpy)
     };
     pc[4] = static_cast<float>(iteration);
     std::memcpy(&pc[5], &n, sizeof(uint32_t));  // numBolts at offset 20
+    uint32_t tb = m_cfg.tanhBound ? 1u : 0u;
+    std::memcpy(&pc[11], &tb, sizeof(uint32_t)); // tanhBound at offset 44
 
     auto pass = m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeBoltAdam);
@@ -1544,6 +1592,33 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             boltFile = m_cfg.boltInitDir + hc.name + "_" + std::to_string((int)dist) + "m_bolt_init.txt";
         }
 
+        // Load per-mirror anchor buffers (regGram + anchorTarget) when anchor_lambda > 0.
+        // Derived from the resolved bolt init path: "..._bolt_init.txt" -> "..._anchor.bin",
+        // otherwise "<file-stem>_anchor.bin". Hard error if missing: a zero-filled anchor
+        // would silently pull the surface toward a flat plate.
+        if (m_cfg.anchorLambda > 0.0f) {
+            std::string anchorPath = boltFile;
+            const std::string boltSuffix = "_bolt_init.txt";
+            if (anchorPath.size() >= boltSuffix.size() &&
+                anchorPath.compare(anchorPath.size() - boltSuffix.size(), boltSuffix.size(), boltSuffix) == 0) {
+                anchorPath.replace(anchorPath.size() - boltSuffix.size(), boltSuffix.size(), "_anchor.bin");
+            } else {
+                size_t dot = anchorPath.rfind('.');
+                if (dot != std::string::npos) anchorPath = anchorPath.substr(0, dot);
+                anchorPath += "_anchor.bin";
+            }
+            std::ifstream fa(anchorPath, std::ios::binary);
+            if (!fa) throw std::runtime_error("anchor_lambda > 0 but anchor buffer not found: " + anchorPath +
+                                              " (run scripts/lsq_fit_compensated.py first)");
+            const int nb = m_cfg.numBolts;
+            std::vector<float> anchorData(nb * nb + nb);
+            fa.read(reinterpret_cast<char*>(anchorData.data()), anchorData.size() * sizeof(float));
+            if (!fa) throw std::runtime_error("anchor buffer truncated: " + anchorPath);
+            m_app.uploadBuffer(m_regGram, anchorData.data(), nb * nb * sizeof(float));
+            m_app.uploadBuffer(m_anchorTarget, anchorData.data() + nb * nb, nb * sizeof(float));
+            fmt::print("  Loaded anchor buffer: {}\n", anchorPath);
+        }
+
         // Initialize bolt heights: from file, or zero (gravity sag)
         std::vector<float> initBolts(m_cfg.numBolts, 0.0f);
         if (!boltFile.empty()) {
@@ -1617,22 +1692,6 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         // A1: sparse pixel culling — active set depends only on heliostat position
         buildActivePixelList(hc.position);
 
-        auto runValidation = [&]() {
-            float totalS95 = 0.0f;
-            for (const auto &sd : trainDirs) {
-                updateUniforms(sd, hc.position, aimPoint);
-                forwardRender(false);
-                auto flux = readFlux();
-                float level = computeS95Level(flux);
-                if (level > 0) {
-                    int count = 0;
-                    for (float f : flux) if (f >= level) count++;
-                    totalS95 += count * pixelArea;
-                }
-            }
-            return totalS95 / trainDirs.size();
-        };
-
         // Helper: cos-theta = |normal.y| for gravity scaling
         auto computeCosTheta = [&](const std::array<float,3>& sd, const std::array<float,3>& hp,
                                     const std::array<float,3>& ap) -> float {
@@ -1644,6 +1703,65 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             float nx = sdx/sl + rdx/rl, nz = sdz/sl + rdz/rl;
             float nl = std::sqrt(nx*nx+ny*ny+nz*nz);
             return std::abs(ny) / nl;
+        };
+
+        auto runValidation = [&]() {
+            static const bool s_dbgEval = []() {
+                const char *e = getenv("BEZIER_DEBUG_EVAL");
+                return e && e[0] == '1';
+            }();
+            float totalS95 = 0.0f;
+            int di = 0;
+            for (const auto &sd : trainDirs) {
+                updateUniforms(sd, hc.position, aimPoint);
+                // Per-direction surface rebuild: with gravity_normal_coupling=1 the
+                // normals depend on the gravity bin (cos-theta); reusing a stale
+                // surface across directions silently mis-evaluates S95.
+                boltForwardSurface(computeCosTheta(sd, hc.position, aimPoint));
+                forwardRender(false);
+                auto flux = readFlux();
+                float level = computeS95Level(flux);
+                if (level > 0) {
+                    int count = 0;
+                    for (float f : flux) if (f >= level) count++;
+                    totalS95 += count * pixelArea;
+                    if (s_dbgEval) {
+                        // checksum of the per-dir surface (normals + heights + slopes)
+                        std::vector<float> nbuf(m_cfg.gridSize * m_cfg.gridSize * 4);
+                        m_app.downloadBuffer(m_nGrid, nbuf.data(), nbuf.size() * sizeof(float));
+                        double nsum = 0; for (float v : nbuf) nsum += v;
+                        std::vector<float> ybuf(m_cfg.gridSize * m_cfg.gridSize);
+                        m_app.downloadBuffer(m_yGrid, ybuf.data(), ybuf.size() * sizeof(float));
+                        double ysum = 0; for (float v : ybuf) ysum += v;
+                        std::vector<float> bbuf(m_cfg.numBolts);
+                        m_app.downloadBuffer(m_boltHeights, bbuf.data(), bbuf.size() * sizeof(float));
+                        double bsum = 0; for (float v : bbuf) bsum += v;
+                        // dump full fields for dir 0
+                        if (di == 0) {
+                            const char *tag = (m_dbgEvalRound == 0) ? "init" : "iter0";
+                            auto dumpBin = [&](const char *name, const float *p, size_t k) {
+                                std::string path = "results_tmp_n150/" + std::string(name) + "_" + tag + ".bin";
+                                std::ofstream ofs(path, std::ios::binary);
+                                ofs.write((const char*)p, k * sizeof(float));
+                            };
+                            dumpBin("yGrid", ybuf.data(), ybuf.size());
+                            dumpBin("nGrid", nbuf.data(), nbuf.size());
+                            dumpBin("bolts", bbuf.data(), bbuf.size());
+                            std::vector<float> yubuf(ybuf.size()), yvbuf(ybuf.size());
+                            m_app.downloadBuffer(m_yuGrid, yubuf.data(), yubuf.size() * sizeof(float));
+                            m_app.downloadBuffer(m_yvGrid, yvbuf.data(), yvbuf.size() * sizeof(float));
+                            dumpBin("yuGrid", yubuf.data(), yubuf.size());
+                            dumpBin("yvGrid", yvbuf.data(), yvbuf.size());
+                        }
+                        fmt::print("    [eval] dir {:3d} cosT={:.4f} S95={:.4f} level={:.3f} nsum={:.6f} ysum={:.6f} bsum={:.6f}\n",
+                                   di, computeCosTheta(sd, hc.position, aimPoint),
+                                   count * pixelArea, level, nsum, ysum, bsum);
+                    }
+                }
+                di++;
+            }
+            m_dbgEvalRound++;
+            return totalS95 / trainDirs.size();
         };
 
         // Diagnostic first direction
