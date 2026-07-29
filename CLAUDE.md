@@ -409,6 +409,7 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `results_4mirror_200iter/fea_validation/FEA_VALIDATION_REPORT.md` | TPS Proxy vs FEA 验证报告（优化螺栓，2026-07-20） |
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
 | `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
+| `docs/gravity_compensation_experiment.md` | **重力补偿 Phase 0–4 主报告**：基线/9 组消融终表/差距三分解/台式机幻影重力事故与双机校验规程（2026-07-30） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
@@ -516,6 +517,18 @@ python scripts/post_fea_validation.py \
 # Dry-run：只生成 APDL 输入文件
 python scripts/post_fea_validation.py --stroke-file ... --dry-run
 ```
+
+---
+
+### 重力补偿 Phase 0–3：结构性地板认证（2026-07-28 ~ 07-30）
+
+详见 `docs/gravity_compensation_experiment.md`（含台式机幻影重力事故记录）。核心结论：
+
+- **基线@36dir 300m NEWS**（S95 m²）：B_naive 51.31/77.90/98.33/78.07，B_comp init 51.75/76.71/94.90/76.83，B_ideal（无重力 LSQ）51.32/65.68/73.51/65.60，B\*（无重力优化下界）49.77/65.00/73.07/64.68。
+- **9 组消融**（参数化 tanh/无界 × 锚定 0–1e5 × 行程约束 × 弯曲能 × init）：E/S/W 终值全部锁定 ~76.2/94.3/76.2（极差 ≤0.13 m² 噪声量级）——**重力地板是 35 螺栓支撑布局的结构性硬约束**，init 无关（naive/comp 两路径收敛同点、总回收量一致）。
+- **差距三分解**（论文定量核心）：E/S/W 理论可缩小差距的 **84–87% 为结构性残余**，comp init + 端到端合计仅回收 ~13–16%。出路在支撑布局/刚度设计，非螺栓调节。
+- **叙事定位**：从"逼近 B\*"修正为"认证地板 + 解释地板 + 结构性出路"。
+- ⚠️ **双机交接教训**：v2 三平面重力 bins（12288 B/bin）一度只存在于本地未提交，导致台式机 legacy bins 幻影重力（重力光学隐形，结果假收敛 B\*）。凡含 `data_proxy` 的交接必须校验 bins 字节数与日志 `Loaded gravity_* (3-plane, ...)`。
 
 ---
 
