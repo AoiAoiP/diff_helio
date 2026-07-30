@@ -1,0 +1,15 @@
+{
+  "description": "L3 scan layout: 9x7 aggressive uniform densification (63 bolts, +80% vs baseline 7x5). Spans: dx=1.348m, dz=1.323m.",
+  "bolts_x": 9,
+  "bolts_z": 7,
+  "margin": 0.08,
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.004,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

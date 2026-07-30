@@ -40,6 +40,7 @@ archive_*.tar.gz
 train_data/
 validation/
 data_proxy_old/
+data_proxy_scan/
 wang/
 
 # Design documents are tracked since 2026-07-28 (submission materials + experiment handoff)

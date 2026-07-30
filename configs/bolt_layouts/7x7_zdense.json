@@ -1,0 +1,15 @@
+{
+  "description": "L2 scan layout: 7x7 z-targeted densification (49 bolts, +40% vs baseline 7x5). Cuts the larger z-span only. Spans: dx=1.798m (unchanged), dz=1.323m.",
+  "bolts_x": 7,
+  "bolts_z": 7,
+  "margin": 0.08,
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.004,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}
