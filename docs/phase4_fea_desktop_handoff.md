@@ -18,8 +18,8 @@ Phase 3 结论：E/S/W 镜重力惩罚的 84–87% 是 35 螺栓结构不可达�
 ## 1. 环境自检（必须先做，两条都过才能继续）
 
 ```bash
-git pull                                   # 须到 dc437dc 或更新
-git log --oneline -1                       # 确认 ≥ dc437dc
+git clone git@github.com:AoiAoiP/diff_helio.git   # 或全新 clone：2026-07-30 历史已重写，旧本地副本不可 pull，须重新 clone
+git log --oneline -1                                # 确认在最新 master（含本文档）
 
 # ① v2 重力数据完整性（幻影重力事故教训，见主报告 §1.6）
 stat -c %s data_proxy/gravity_10deg.bin    # 必须是 12288；若为 4096 立刻停止并报告

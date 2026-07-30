@@ -149,7 +149,7 @@ init 无关性已由 naiveinit 组确认，③占比对 init 选择稳健。
 
 **根因**：v2 三平面重力 bins（12288 B/bin）在笔记本本地重生成后未及时 commit，台式机 pull 到旧版
 单平面 bins（4096 B/bin），加载器走 legacy 分支（du/dv 补零 → 法线不吃重力斜率 → 重力光学隐形，
-即 1.1.1 的 bug 在台式机上复活）。已于 commit `6d19d3c` 修复并推送。
+即 1.1.1 的 bug 在台式机上复活）。已修复并推送（注：本文涉及的 commit 哈希均为 2026-07-30 仓库历史重写前的旧哈希，仅作叙事保留，已失效）。
 
 **双机校验规程（今后强制执行）**：凡含 `data_proxy` 的交接，必须校验
 ① bins 字节数 = 12288；② 运行日志含 `Loaded gravity_*deg.bin (3-plane, ...)`（20 行）；
@@ -376,7 +376,7 @@ best 50.34/76.21/94.28/~76.21。**端到端在重力下几乎推不动 S95**—�
 - **台式机幻影重力事故**：其 4 组结果判定无效（根因=未提交的 v2 bins，详见 1.6）；
   笔记本同配置对照组 nt_a1e3_soft1e5 = 50.39/76.20/94.24/76.19（12527s，20 行 3-plane 加载记录）。
 - **跑批收尾**：nt_a1e3_soft1e6 与 soft1e5 逐位一致（软墙未激活）；tanh_a1e3_b1e2 ≈ 基线
-  （弯曲能无增益）。commit `6d19d3c`（含 v2 bins 修复 + 3 组结果 + 双机校验规程）。
+  （弯曲能无增益）。收尾提交（含 v2 bins 修复 + 3 组结果 + 双机校验规程）。
 
 ## 3.6　2026-07-30：naiveinit 补跑——9/9 闭环，Phase 3 定稿
 
@@ -384,7 +384,7 @@ best 50.34/76.21/94.28/~76.21。**端到端在重力下几乎推不动 S95**—�
   init 逐位等于 B_naive（51.31/77.90/98.33/78.07）→ best **50.42/76.23/94.36/76.16**，落同一地板。
   总回收量路径一致（E：naive 1.67 ≈ comp 1.69）→ **init 无关性闭环，六重证据齐备**。
 - 报告定稿：消融终表、判决段落、差距三分解表（1.4）、FEA 抽查方案；CLAUDE.md 实验日志条目。
-  commit `90228db`，已推送远端（`66d5048..90228db`）。
+  收尾提交，已推送远端。
 - **FEA 抽查命令已验证**（dry-run 通过，ANSYS v252 @ L:\）：
 
 ```
@@ -421,7 +421,7 @@ python scripts/run_fea_validation.py --result-dir results_fw_tanh_a0 --heliostat
 
 | 路径 | 说明 |
 |---|---|
-| `data_proxy/gravity_*.bin` | **v2 三平面格式（12288 B/bin）**——2026-07-27 重生成，曾因未提交导致台式机幻影重力事故，`6d19d3c` 起入库 |
+| `data_proxy/gravity_*.bin` | **v2 三平面格式（12288 B/bin）**——2026-07-27 重生成，曾因未提交导致台式机幻影重力事故，事故后修复入库 |
 | `data_proxy/gravity_angles.json` | 增加 `"format": "w_du_dv_v2"` 标记 |
 | `data/init_comp/` / `data/init_comp_36/` | h\* init（`_bolt_init.txt`）+ 逐镜锚定 buffer（`_anchor.bin` 35×36 float32 + JSON 元数据）+ comp_summary.csv |
 

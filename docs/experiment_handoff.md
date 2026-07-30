@@ -30,7 +30,7 @@ export VULKAN_SDK="C:\\VulkanSDK\\<本机版本>"
 
 - 运行所需数据**已全部在仓库内**：`data_proxy/`（TPS 影响函数 + 20-bin 重力库，8.1MB）、`data/`（太阳方向、镜位、init 螺栓，含 `data/init_comp_36/`、`data/init_comp/`（110dir）锚定 init 与 anchor.bin）、`configs/`。无需重新生成。
 - 台式机 GPU 只要是 Vulkan 兼容卡即可；显存 ≥8GB 稳妥。
-- **离线迁移后备**：若 git pull 不可用，仓库根有 `diff_helio_handoff.bundle`（25MB，完整历史至 `66d5048`，2026-07-29 前的结果）；`git clone diff_helio_handoff.bundle bezier_opt` 即可。**注意 bundle 不含其后新提交**（a1e4/a1e5/nt_soft1e5 结果在第 2 次提交中，以 git pull 为准）。
+- ~~离线迁移后备：bundle~~（已作废：两个 bundle 文件均已删除，且 2026-07-30 仓库历史重写后旧 bundle 与新历史不兼容；一律以 git clone 为准）。
 
 ## 3. 项目一句话与文档地图
 
