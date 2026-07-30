@@ -31,6 +31,17 @@ results/
 results_*/
 validation_*/
 
+# Transfer artifacts & logs (regenerable)
+*.bundle
+logs/
+archive_*.tar.gz
+
+# Legacy data archived out of repo (2026-07-30, see archive_legacy_data.tar.gz)
+train_data/
+validation/
+data_proxy_old/
+wang/
+
 # Design documents are tracked since 2026-07-28 (submission materials + experiment handoff)
 
 wang/
