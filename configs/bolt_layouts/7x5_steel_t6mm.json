@@ -1,14 +1,14 @@
 {
-  "description": "Material feasibility M1: baseline 7x5 layout, STEEL 6mm (E=200GPa, nu=0.30, rho=7850). Thick end of bracket; near-linear regime (w/t<1).",
+  "description": "Material feasibility M1: baseline 7x5 layout, STEEL 6mm (E=206GPa, nu=0.30, rho=7800, per KeshengV3 Structural Steel). Thick end of bracket; near-linear regime (w/t<1).",
   "bolts_x": 7,
   "bolts_z": 5,
   "margin": 0.08,
   "plate_width_m": 12.84,
   "plate_length_m": 9.45,
   "plate_thickness_m": 0.006,
-  "youngs_modulus_pa": 200000000000.0,
+  "youngs_modulus_pa": 206000000000.0,
   "poisson_ratio": 0.30,
-  "density_kg_m3": 7850,
+  "density_kg_m3": 7800,
   "gravity_m_s2": 9.81,
   "mesh_ndiv_x": 64,
   "mesh_ndiv_z": 48
