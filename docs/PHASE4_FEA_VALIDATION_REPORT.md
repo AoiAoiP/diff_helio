@@ -139,3 +139,14 @@ python scripts/run_fea_validation.py --result-dir results_fw_tanh_a0 \
 58.5° ≈2mm 量级，非 0.00）；此后 RMS/shape_corr 才是"proxy(螺栓+重力) vs FEA"的有效对比。
 预期：若 proxy 重力保真，RMS 应回落至螺栓差异水平（~2–3mm）、shape_corr 回升至 ~0.95+；
 若 RMS 不降反升 → proxy 重力存在真实误差，需重估地板量级。
+
+---
+
+## ✅ 终判（2026-07-30，v2 重跑后）：通过——重力地板为真实物理
+
+重跑（proxy 重力正确加载，Gravity PV=11.09/5.54/2.83mm 与 bin 值逐位一致）后：
+两镜 RMS 2.129–3.346mm、shape_corr 0.954–0.978、R² 0.877–0.948，与 2026-07-17/21
+历史验证同水平。① 大重力角度加入 proxy 重力后 RMS 大降（0° −42~45%）→ 重力场形状吻合；
+② South≈North（惩罚差 25 倍而偏差几乎相同）→ 重力侧无系统性失真。
+保留项：58.5° PV_ratio ~1.25–1.27（46° NLGEOM 变号区小分母效应，方向为 proxy 高估形变，
+结论方向安全）。详见主报告 §3.7。
