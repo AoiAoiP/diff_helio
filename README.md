@@ -252,7 +252,8 @@ proxy 对光学目标的贡献结构上为零。修复重力→法线耦合后�
 |------|------|
 | `CLAUDE.md` | 开发者参考：编译、架构、方法论、实验日志 |
 | `docs/gravity_compensation_experiment.md` | **重力补偿主报告**（诊断结论/方案/日志/清单，Phase 0–3 闭环） |
-| `docs/phase4_fea_desktop_handoff.md` | Phase 4 FEA 抽查台式机操作文档 |
+| `docs/gravity_compensation_experiment.md` §3.7 | **Phase 4 FEA 抽查**（台式机，South+North 300m × 3 角度：地板为真实物理，含执行/产物补记） |
+| `docs/phase4_110dir_desktop_handoff.md` | 110dir 复核台式机操作文档（采样证伪实验，执行中） |
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选）+ 论文大纲 + 后续工作 |
 | `docs/draft.md` | 论文初稿中文版（摘要 + 引言 + 相关工作，§3 起为大纲） |
 | `docs/experiment_handoff.md` | 双机交接记录（历史，bundle 方案已作废） |

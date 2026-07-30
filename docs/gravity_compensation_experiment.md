@@ -487,3 +487,11 @@ expected 1024` + `Gravity PV: 0.00 mm`：Python 加载器只认 1024-float 旧�
 `Gravity PV: 0.00` 一律视为环境事故而非数据。
 
 **Phase 4 状态**：核心验证收口。剩余可选：110dir 复核（`_bound_nograv_300m`、`_fw_tanh_a0_110`）。
+
+**§3.7 补记（执行与产物）**：抽查于台式机执行（ANSYS v252 默认路径，`L:\Code\bezier_opt_desktop`）。
+环境自检通过：bins=12288B、两镜 STROKE_bolts 在位。首轮（无效轮）数值：South 3.907/3.750/2.900、
+North 3.842/3.667/2.777（proxy 重力置零所致，见上）；修复后重跑即上表有效值。
+产物（台式机本地保留）：`results_fw_tanh_a0/fea_validation/`（APDL 输入、node_dump CSV、
+逐角度对比 PNG×6、`comparison/metrics_*.json`×6，数值与日志一致）；
+日志 `_phase4_fea_{south,north}300m_v2.log` 已随本报告归档于 docs/ 讨论记录。
+North 作阴性对照（惩罚≈0），其与 South 偏差几乎相同是"偏差由螺栓/TPS 侧主导"的关键证据。
