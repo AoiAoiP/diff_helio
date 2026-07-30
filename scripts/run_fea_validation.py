@@ -635,8 +635,11 @@ def load_gravity_bins(data_dir):
             raw = np.fromfile(path, dtype=np.float32)
             if len(raw) == n_grid:
                 bins[i] = raw
+            elif len(raw) == 3 * n_grid:
+                # v2 三平面 [w, du, dv]：形变对比只需 w 平面
+                bins[i] = raw[:n_grid]
             else:
-                print(f"  WARN: gravity_{ang_int}deg.bin has {len(raw)} floats, expected {n_grid}")
+                print(f"  WARN: gravity_{ang_int}deg.bin has {len(raw)} floats, expected {n_grid} (or {3*n_grid} for v2)")
         else:
             print(f"  WARN: {path} not found, using zeros")
 
