@@ -1152,7 +1152,7 @@ void BezierPipeline::computeWoSInfluence(const std::string &outputDir) {
         ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         ci.stage.module = sm;
-        ci.stage.pName = "computeWoSInfluence";
+        ci.stage.pName = "main";
         ci.layout = pipeWoS.layout;
         vr = vkCreateComputePipelines(m_app.device(), VK_NULL_HANDLE, 1, &ci, nullptr, &pipeWoS.pipeline);
         if (vr != VK_SUCCESS) throw std::runtime_error(fmt::format("WoS pipeline: {} — check shader entry point name matches SPIR-V", (int)vr));
