@@ -101,7 +101,8 @@ def main():
               f"PV={np.ptp(sg)*1000:6.2f}mm slopeRMS={srms*1000:.2f}mrad", flush=True)
     with open(f"{args.out}/gravity_angles.json", "w") as fh:
         json.dump(meta, fh, indent=2)
-    for f in ["influence_phi.bin", "influence_phi_u.bin", "influence_phi_v.bin"]:
+    for f in ["influence_phi.bin", "influence_phi_u.bin", "influence_phi_v.bin",
+              "gravity_y.bin"]:
         src = os.path.join(args.phi_dir, f)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(args.out, f))
