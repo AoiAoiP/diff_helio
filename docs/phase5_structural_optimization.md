@@ -1,6 +1,6 @@
 # Phase 5 总报告：结构层优化——支撑布局 × 材料 × 可微重力场 ROM
 
-> **状态（2026-07-31）**：Phase 5.0/5.1/材料轴已闭环；Phase 5.2 Track B ROM 研制完成、G2 通过；G5 端到端正由台式机执行。
+> **状态（2026-07-31）**：Phase 5.0/5.1/材料轴已闭环；Phase 5.2 Track B ROM 研制完成、G2 通过；G5 端到端 + FEA 抽查批 (a) 真值复跑完成（m\*=0.04 真值口径确认，§3.6）。
 > **本文档取代并整合**：`material_steel_feasibility.md`、`phase5_layout_optimization.md`、`phase5_2_wos_layout_optimization.md`、`phase5_2_g5_desktop_ops.md`（四文档已并入本报告相应章节，原文件退役）。
 > 前置：`gravity_compensation_experiment.md`（Phase 0–4 主报告）。
 
@@ -299,11 +299,29 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 
 **G5 总裁决**：**门 B 通过**——ROM provider 驱动的 margin 优化端到端成立，m\*=0.04、E/S/W −23~30% 为 v1 口径结论。门 A 的 m08 形态被两项已知因素污染并已归因；margin\* 的最终定量确认以 FEA 抽查批 (a) m04 真值 bins + 真值复跑为准（曲线可能整体平移，但最优点位置比绝对水平更可信——附录 C.4）。
 
+**FEA 抽查批 (a)：m04/m06 真值复跑（2026-07-31 台式机，`results_g5truth/`）——m\*=0.04 真值口径确认**
+
+真值 bins 复用 Phase 5.1 全量制品（`data_proxy_margin/7x5_margin0{4,6}`，20×12288B 3-plane，本机 ANSYS252 脚本族），未新增 ANSYS 机时；配置 `configs/_{eval,rerun}_g5t_*.json`（110dir，协议同 G5 m06/m08 臂：comp init + 100 iter）。门 A 复现核对：m06 comp-init 53.14/69.36/77.60/69.56 与上门 A 表逐位一致（本机口径链路完整）。
+
+| 组（S95 m²） | North | East | South | West | 合计 |
+|---|---|---|---|---|---|
+| m04 真值 comp-init | 56.54 | 70.10 | 76.85 | 70.42 | 273.9 |
+| m04 真值 × ROM-m04 最优（迁移评估） | 51.43 | 69.70 | 76.98 | 69.39 | 267.5 |
+| m06 真值 × ROM-m06 最优（迁移评估） | 49.45 | 68.80 | 77.29 | 68.63 | 264.2 |
+| **m04 真值重优化** | **47.53** | **66.60** | **74.64** | **66.49** | **255.3** |
+| m06 真值重优化 | 48.42 | 68.02 | 76.85 | 67.99 | 261.3 |
+
+1. **迁移损失在判据带内**：ROM 最优螺栓直接在真值场评估，m04 +1.0%（267.5 vs ROM 264.9）、m06 −4.0%（264.2 vs ROM 275.2）⇒ provider 端到端可信（2–5% 带）。
+2. **m\*=0.04 真值口径成立**：真值重优化 m04 合计 255.3 < m06 261.3（−2.3%）；较 m04 真值 comp-init −6.8%；较 GUI m08 base best −15.0%（E/S/W −15.1/−19.6/−15.2%，跨族参考，同族 m08 基线待 (c)）。
+3. **§C.4"曲线偏陡"预测实证**：m04→m06 间隔 ROM 侧 10.3 vs 真值侧 6.0——最优点位置不变、斜率近减半，与"幅值高估 ⇒ 曲线偏陡、位置比斜率可信"一致。
+4. 迁移评估出现的 m06<m04 反转（264.2 vs 267.5）在真值重优化后复位（m04 反超）——m04 红利需真值口径重优化兑现（North 47.53 vs 迁移 51.43）。
+5. 遗留：真值侧 m03/m05 bins 缺失（U 形闭合需新增 ANSYS 机时）；同族 m08 基线待 (c)。
+
 ## 3.7 当前状态与待执行（2026-07-31）
 
 - **主机迁移（2026-07-31）**：工作主机由笔记本迁移至台式机，仓库 `L:\Code\bezier_opt_desktop`（后续会话在台式机继续）。笔记本端本地数据包（`0730_margin*/`、`margin06_data_*/`、`phase4_experiment_results_*/`、`data_rom/`、`ref/`、`rom_g5_results_*/`）已 gitignore 不入库，以台式机本地副本为准；`data_rom/` 可由 `scripts/rom_field_provider.py` 再生。
-- **G5 完成（2026-07-31，§3.6）**：门 B 通过（m\*=0.04，E/S/W −23~30% @ROM 口径）；门 A m08 差异已归因（alpha 传递退化 + GUI/脚本族口径差）；m06 同族渲染级裁决见 §3.6。
-- **下一步（台式机，按优先级）**：FEA 抽查批（§2.6 末段）——(a) **m04 真值 bins + 真值复跑**（margin\* 最终裁决，最高优先）；(c) 脚本版 m08 重生成（统一口径，消除诊断二系统差）；(b) 细网格 m04/m06（差场量化裁决）。之后 v2：`alpha=f(θ,w/t)`（新证据：m08 传递比 0.79）、Newton 切线（解锁 nb=6）、逐栓 70 维参数化；Track C 按有界里程碑评估。
+- **G5 + FEA 抽查批 (a) 完成（2026-07-31，§3.6）**：门 B 通过（m\*=0.04，E/S/W −23~30% @ROM 口径）并经真值复跑确认（m04 真值重优化合计 255.3 < m06 261.3；ROM→真值迁移损失 +1.0/−4.0%；"曲线偏陡"预测实证 10.3→6.0）；门 A m08 差异已归因（alpha 传递退化 + GUI/脚本族口径差）。
+- **下一步（台式机，按优先级）**：FEA 抽查批余项——(c) 脚本版 m08 重生成（统一口径，消除诊断二系统差，给出同族 margin 红利定量）；(b) 细网格 m04/m06（差场量化裁决）；可选增补 m03/m05 真值 bins（闭合真值侧 U 形）。之后 v2：`alpha=f(θ,w/t)`（新证据：m08 传递比 0.79）、Newton 切线（解锁 nb=6）、逐栓 70 维参数化；Track C 按有界里程碑评估。
 - **论文衔接**：叙事 = 认证地板 → 定位空间来源（悬挑主导而非密度）→ 守恒律驱动的两级旋钮（margin 优先、密度随后）+ 厚度缩放轴 → 物理 ROM 进入结构层优化闭环（回应 §1.2 批评）。G5 补上闭环最后一环：ROM 驱动端到端 margin 优化 + U 形内点最优实证。适配 TVCG/AEI 的 AI+物理叙事。
 
 ---
@@ -349,7 +367,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 | G2 | ROM 保真（修订） | **通过**（10–30° cos 0.944–0.963、α∈[0.8,1.25]、负 alpha 全角覆盖） |
 | G3 | 差场保真 | 已知限制（cos 0.67–0.78、幅值×2，真值受网格量化，待细网格裁决） |
 | G4 | margin 梯度 | 豁免（v1 免导数外环） |
-| G5 | margin 0.08→3–5% | **门 B 通过**（m\*=0.04，E/S/W −23~30% @ROM 口径；门 A m08 污染已归因、m06 同族渲染裁决通过 §3.6） |
+| G5 | margin 0.08→3–5% | **门 B 通过**（m\*=0.04，E/S/W −23~30% @ROM 口径；门 A m08 污染已归因、m06 同族渲染裁决通过 §3.6）；**FEA(a) 真值复跑确认**（m04 真值重优化 255.3 < m06 261.3） |
 
 ## B. 文件与脚本地图
 
@@ -357,7 +375,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 - Phase 5.2：`scripts/rom_plate_fem.py`（VK ROM 主体）、`rom_b2_validation.py`（B2 扫描）、`rom_field_provider.py`（bins 提供器）、`rom_margin_optimize.py`（G5 驱动）、`g0_layout_interp_validation.py`、`g1_wos_vs_ansys_influence.py`；留档 `rom_gravity_model.py`（连续梁）、`rom_grillage.py`（梁格，均证伪）
 - WoS：`shaders/wos_influence.slang`、`wos_common.slang`；`src/pipeline.cpp:1109 computeWoSInfluence()`
 - 数据：`analysis/rom_b2_sweep.csv`、`rom_b2_alpha_table.csv`、`rom_g5_margin_curve_{base,rom,smoke}.csv`（G5）、`material_swap_report.md`、`layout_scan_report.md`、`margin_scan_report.md`、`margin_full_report.md`
-- G5：`rom_g5_results_20260731/`（本地结果包，gitignored：results_rom/ 7 组 + data_rom/ 5 布局制品 + provider 日志）；`configs/_eval_g5a_m06_ansys_110.json`（门 A m06 同族渲染裁决）
+- G5：`rom_g5_results_20260731/`（本地结果包，gitignored：results_rom/ 7 组 + data_rom/ 5 布局制品 + provider 日志）；`configs/_eval_g5a_m06_ansys_110.json`（门 A m06 同族渲染裁决）；FEA(a)：`configs/_{eval,rerun}_g5t_*.json`（4 评估 + 2 重优化）、`results_g5truth/`、`data/init_g5truth/`（ROM 最优螺栓迁移 init）
 - 渲染器接口：`src/config.cpp:118-123`（num_bolts_x/z、bolt_margin、influence_data_path）、`src/pipeline.cpp:495-561`（20-bin 3-plane 重力加载）
 
 ## C. 风险与边界
@@ -365,6 +383,6 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 1. **制造约束**：真实定日镜螺栓位置受扭矩管/桁架限制；布局族设计阶段必须纳入（参照 KeshengV3：导轨距边 ~0.13m ≈ margin 1–2%）。
 2. **θ 分量仍不可约**：布局只动地板和可达带，不动 §1.1.3 的 θ 变化分量；论证勿过度承诺。
 3. **m08 口径不一致**（§3.5 诊断二）：Phase 5.1 定量结论含模型系统差，脚本版 m08 重生成后重审；组1/组2 对照预期 2–5% 差。
-4. **ROM 已知限制**：cos 上限 ~0.95（真值分箱平滑+单元学差异）；差场幅值高估 ~2 倍（margin 曲线形状可能偏陡，最优点位置比斜率更可信）；alpha 布局传递随 w/t 退化（m06 0.85、m08 实测 0.79——v2 `alpha=f(θ,w/t)`）；nb=6 待 Newton 升级。
+4. **ROM 已知限制**：cos 上限 ~0.95（真值分箱平滑+单元学差异）；差场幅值高估 ~2 倍（margin 曲线偏陡——FEA(a) 实证：m04→m06 斜率 ROM 10.3 vs 真值 6.0，最优点位置不变，位置比斜率可信）；alpha 布局传递随 w/t 退化（m06 0.85、m08 实测 0.79——v2 `alpha=f(θ,w/t)`）；nb=6 待 Newton 升级。
 5. **材料代理边界**：纯平板钢壳 ≠ 成形背板（附加刚度 1–2 量级来自几何）；胶合复合为保守方向偏差；线弹性（远低于屈服）成立。
 6. **亚网格悬挑**：margin 2% 悬挑小于渲染网格（0.40m/格），相对比较公平、绝对残差略低估。

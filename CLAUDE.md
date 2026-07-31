@@ -410,7 +410,7 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
 | `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
 | `docs/gravity_compensation_experiment.md` | **重力补偿 Phase 0–4 主报告**：基线/9 组消融终表/差距三分解/台式机幻影重力事故与双机校验规程（2026-07-30） |
-| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-07-31 四文档整合）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5 台式机执行中**） |
+| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-07-31 四文档整合）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a) 完成，m\*=0.04 真值确认**） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
@@ -530,7 +530,7 @@ python scripts/post_fea_validation.py --stroke-file ... --dry-run
 - **差距三分解**（论文定量核心）：E/S/W 理论可缩小差距的 **84–87% 为结构性残余**，comp init + 端到端合计仅回收 ~13–16%。出路在支撑布局/刚度设计，非螺栓调节。
 - **叙事定位**：从"逼近 B\*"修正为"认证地板 + 解释地板 + 结构性出路"。
 - ⚠️ **双机交接教训**：v2 三平面重力 bins（12288 B/bin）一度只存在于本地未提交，导致台式机 legacy bins 幻影重力（重力光学隐形，结果假收敛 B\*）。凡含 `data_proxy` 的交接必须校验 bins 字节数与日志 `Loaded gravity_* (3-plane, ...)`。
-- **Phase 5 已独立成册**：结构层优化（布局扫描 / 材料替换 / ROM 重力 provider）见 `docs/phase5_structural_optimization.md`。当前 G5 端到端验证在台式机（仓库 `L:\Code\bezier_opt_desktop`）执行中（2026-07-31 起工作主机迁移至台式机）。
+- **Phase 5 已独立成册**：结构层优化（布局扫描 / 材料替换 / ROM 重力 provider）见 `docs/phase5_structural_optimization.md`。G5 端到端验证 + FEA 抽查批 (a) 真值复跑已在台式机完成（m\*=0.04 真值口径确认，2026-07-31；工作主机已迁移至台式机 `L:\Code\bezier_opt_desktop`）。
 
 ---
 
@@ -542,4 +542,4 @@ APDL=GUI 位精确一致性已确认，但 **Proxy vs FEA 仍存在系统性偏�
 
 早期整体替换调研（`docs/plate_proxy_replacement_research.md`：POD-ROM、Kirchhoff Green 函数、模态展开、PINN/算子学习、POD+MLP）已证明**整体替换既不必要也不可行**。
 
-Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端验证台式机执行中。
+Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a) 真值复跑完成（m\*=0.04 真值口径确认）。
