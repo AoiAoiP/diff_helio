@@ -268,6 +268,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 
 ## 3.6 当前状态与待执行（2026-07-31）
 
+- **主机迁移（2026-07-31）**：工作主机由笔记本迁移至台式机，仓库 `L:\Code\bezier_opt_desktop`（后续会话在台式机继续）。笔记本端本地数据包（`0730_margin*/`、`margin06_data_*/`、`phase4_experiment_results_*/`、`data_rom/`、`ref/`）已 gitignore 不入库，以台式机本地副本为准；`data_rom/` 可由 `scripts/rom_field_provider.py` 再生。
 - **执行中**：G5 台式机批（§2.6：组1 ANSYS 基线 / 组2 ROM sanity / 组3–6 ROM margin 曲线 0.06→0.03）。
 - **判读标准**：组1 vs 组2 <2–5% ⇒ provider 端到端可信；rom 曲线 0.03–0.05 出最小值且较 0.08 改善 3–5% ⇒ **G5 通过**（与 5.1 守恒律预测互证）。
 - **后续**：FEA 抽查批（§2.6：m* 真值复跑、细网格 m04/m06、脚本版 m08）→ 附录补 G5 记录；v2 候选改进（alpha=f(θ,w/t)、Newton 切线 + nb=6、逐栓位置 v2 参数化——70 维 tanh 有界偏移）；Track C 按有界里程碑评估。

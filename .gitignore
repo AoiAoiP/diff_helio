@@ -52,3 +52,10 @@ wang/
 data_proxy_mode2/
 data_proxy_old/build_exe.exe
 shaders/*.spv
+
+# Local data/transfer packages (2026-07-31 主机迁移：台式机有副本或可再生，不入库)
+0730_margin*/
+margin06_data_*/
+phase4_experiment_results_*/
+data_rom/
+ref/
