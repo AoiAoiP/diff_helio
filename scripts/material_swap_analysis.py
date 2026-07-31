@@ -6,7 +6,8 @@ For each scan dir (steel variant) vs the baseline dir (glass 7x5), per common an
 
   - alpha_w   : least-squares optimal scale <w_s, w_g>/<w_g, w_g>
                 (compare with the linear-theory prediction in
-                docs/material_steel_feasibility.md)
+                docs/phase5_structural_optimization.md; the former
+                material_steel_feasibility.md has been merged into it)
   - cos_sim   : cosine similarity of the two w-fields (= sqrt of post-scaling R^2).
                 >=0.99 means the swap is a pure rescaling and all Phase 0-4
                 conclusions (three-band ratios, compensability %, theta
@@ -130,7 +131,7 @@ def main():
             w('')
 
     if verdicts:
-        w('## 判定速览（标准见 docs/material_steel_feasibility.md §4.4）')
+        w('## 判定速览（标准见 docs/phase5_structural_optimization.md 附录 A.2）')
         w('')
         for label, cmin, amin, amax in verdicts:
             grade = ('纯缩放（Go）' if cmin >= 0.99

@@ -79,7 +79,7 @@ alpha_w = 最小二乘最优缩放；cos_sim = 形场余弦相似度（≥0.99 �
 
 - **steel_t6 小结**：min cos_sim = 0.9963；alpha_w 范围 [0.452, 0.590]（spread 1.31x）
 
-## 判定速览（标准见 docs/material_steel_feasibility.md §4.4）
+## 判定速览（标准见 docs/phase5_structural_optimization.md 附录 A.2，原 material_steel_feasibility.md 已并入）
 
 - **steel_t3**：cos_sim_min=0.9820 → 近似缩放（低角度需专属 bins）
 - **steel_t4**：cos_sim_min=1.0000 → 纯缩放（Go）

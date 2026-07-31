@@ -61,7 +61,7 @@ yv = 0.0f;   // ← 重力不进 v 向导数
 > **本节全部定量结论（PV、斜率预算、可补偿率）不受影响；变化的是机制归因与出路方向：
 > 地板的结构旋钮是 margin/悬挑（第一）+ 厚度（第二，缩放轴）+ 螺栓密度（与 margin
 > 存在守恒权衡，组合后生效），而非单独的螺栓密度。**
-> 详见 `docs/phase5_layout_optimization.md` §0。
+> 详见 `docs/phase5_structural_optimization.md` §1.2（原 `phase5_layout_optimization.md`，已并入）。
 
 ![图 1-2　支撑间凹陷剖面与三频带能量分布](img/fig_1_2_sag_compensability.png)
 
@@ -284,7 +284,7 @@ L(h) = L_S95(h) + λ_E·L_energy(h)          （已有，≥900m 保留）
 2. ✅ FEA 抽查（2026-07-30，见 3.7）：South+North 300m × {0°, 29.5°, 58.5°}，proxy(螺栓+重力) vs FEA
    RMS 2.1–3.3mm、shape_corr 0.95–0.98，与历史验证同水平——**地板为真实物理，非 proxy 伪影**。
 3. ✅ 110dir 复核（2026-07-30，见 3.8）：四项判定全过，地板非采样伪影，@110 为终稿数字。
-   布局敏感度 Tier-2 已升格为独立方向：Phase 5 布局扫描（`docs/phase5_layout_optimization.md`）。
+   布局敏感度 Tier-2 已升格为独立方向：Phase 5 布局扫描（`docs/phase5_structural_optimization.md` §1/§2）。
 4. ✅ CLAUDE.md 更新（实验日志条目 + 双机校验规程）。
 
 ## 2.4 新增配置键
@@ -490,8 +490,9 @@ python scripts/run_fea_validation.py --result-dir results_fw_tanh_a0 --heliostat
 
 ---
 
-> **下一步**：Phase 4 全部收口。后续方向见 `docs/phase5_layout_optimization.md`（布局扫描）
-> 与 `docs/material_steel_feasibility.md`（钢材替换可行性）。
+> **下一步**：Phase 4 全部收口。后续方向见 `docs/phase5_structural_optimization.md`
+> （布局扫描 + 钢材替换可行性 + WoS/ROM 结构优化汇总，原 `phase5_layout_optimization.md`
+> 与 `material_steel_feasibility.md` 已并入）。
 
 ## 3.7　2026-07-30：Phase 4 FEA 抽查——地板通过独立验证（含第三次幻影重力事故）
 
