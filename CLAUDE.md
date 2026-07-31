@@ -542,4 +542,4 @@ APDL=GUI 位精确一致性已确认，但 **Proxy vs FEA 仍存在系统性偏�
 
 早期整体替换调研（`docs/plate_proxy_replacement_research.md`：POD-ROM、Kirchhoff Green 函数、模态展开、PINN/算子学习、POD+MLP）已证明**整体替换既不必要也不可行**。
 
-Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c) 完成（m\*=0.04 真值口径确认；脚本版 m08 统一口径）。**新开放问题：m08 零行程高倾角分支裁决**——GUI m08 于 46° 翻转、脚本 m08 全程光滑分支（脚本族 m04/m06 同翻转，分支翻转布局依赖），决定同族 margin 红利口径（15% vs 34%），见 `docs/phase5_structural_optimization.md` §3.7。
+Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c)(d) 完成（m\*=0.04 真值口径确认；脚本版 m08 统一口径；分支三轮裁决——细子步/rotfix/细网格均不翻转，GUI 翻转不可复现，**同族 margin 红利收敛 m08→m04 = −33.6%**），见 `docs/phase5_structural_optimization.md` §3.6/§3.7。
