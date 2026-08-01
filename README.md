@@ -2,8 +2,8 @@
 
 基于 **Vulkan GPU 光线追踪 + Slang 自动微分**的定日镜螺栓调高优化管线。通过 TPS（薄板样条）物理代理模型将 35 根螺栓推拉高度映射为镜面变形、将 FEA 重力形变耦合进表面法线，最小化圆柱接收器上的年均 S95 光斑面积。
 
-**当前研究主线**：重力补偿与结构性地板认证（2026-07-27 起，Phase 0–3 已闭环）——见
-`docs/gravity_compensation_experiment.md`（主报告）与下文「研究主线」一节。
+**当前研究主线**：结构层优化（Phase 5，2026-07-31 闭环）——margin 8%→0.04–0.05（点估计 0.05）零螺栓成本，300m NEWS 四镜年均 S95 红利 **−26.7%**（334dir 真值终评）；前置重力补偿与结构性地板认证（Phase 0–4）——见
+`docs/phase5_structural_optimization.md`（Phase 5 主报告）、`docs/gravity_compensation_experiment.md`（Phase 0–4 主报告）与下文「研究主线」一节。
 
 ---
 
@@ -132,6 +132,18 @@ proxy 对光学目标的贡献结构上为零。修复重力→法线耦合后�
 
 ---
 
+## 研究主线续章：Phase 4–5（2026-07-30/31，已闭环）
+
+- **Phase 4（FEA 抽查）**：地板通过独立 FEA 验证——不是渲染器/proxy 假象，是真实物理（重力主报告 §3.7）。
+- **Phase 5（结构层优化，主报告 `docs/phase5_structural_optimization.md`）**：把支撑布局变成优化变量。
+  发现链：密度轴死亡（+80% 螺栓仅 −4% 地板）→ 真凶悬挑（80–90% 斜率能量）→ 悬挑-跨距守恒律
+  （margin 存在内点最优）→ von Kármán 板 ROM 重力 provider 进端到端闭环（G5 门通过）→
+  粗子步跳支伪影识别与清除（细子步 NSUBST 50,500,50 真值，全部 margin 光滑分支）。
+  **终版结论：margin 8%→0.04–0.05（点估计 0.05），300m NEWS 四镜年均 S95 281.7 vs 基线 384.2（334dir），
+  红利 −26.7%**；终版交付包 `results_final_m05/`（布局坐标+四镜行程+面型/光斑图+年均 S95）。
+
+---
+
 ## P0/P1 优化（ARCAim 启发，2026-07-20）
 
 - **A1 逐光线角度预裁剪**（`ray_cull`，默认 ON）：宏观法向反射余弦预测试，North300m 全轨迹
@@ -251,9 +263,9 @@ proxy 对光学目标的贡献结构上为零。修复重力→法线耦合后�
 | 文件 | 内容 |
 |------|------|
 | `CLAUDE.md` | 开发者参考：编译、架构、方法论、实验日志 |
-| `docs/gravity_compensation_experiment.md` | **重力补偿主报告**（诊断结论/方案/日志/清单，Phase 0–3 闭环） |
+| `docs/gravity_compensation_experiment.md` | **重力补偿主报告**（诊断结论/方案/日志/清单，Phase 0–4 闭环） |
 | `docs/gravity_compensation_experiment.md` §3.7 | **Phase 4 FEA 抽查**（台式机，South+North 300m × 3 角度：地板为真实物理，含执行/产物补记） |
-| `docs/phase4_110dir_desktop_handoff.md` | 110dir 复核台式机操作文档（采样证伪实验，执行中） |
+| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（悬挑主导/守恒律/材料缩放/ROM provider/G0–G5 门/FEA 抽查/真值修正批；**终版 m\*≈0.04–0.05、红利 −26.7%**） |
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选）+ 论文大纲 + 后续工作 |
 | `docs/draft.md` | 论文初稿中文版（摘要 + 引言 + 相关工作，§3 起为大纲） |
 | `docs/experiment_handoff.md` | 双机交接记录（历史，bundle 方案已作废） |
