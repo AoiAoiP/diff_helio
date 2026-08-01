@@ -1,8 +1,12 @@
-# Final package exporter (results_final_m04/): bolt layout + per-mirror
-# stroke table CSV, and surface/slope comparison figures at representative
-# tilt angles (bare gravity vs compensated, m04 ANSYS-truth field).
+# Final package exporter: bolt layout + per-mirror stroke table CSV, and
+# surface/slope comparison figures at representative tilt angles (bare gravity
+# vs compensated). Parameterized by margin tag:
 #
-#   python scripts/export_final_package_m04.py
+#   python scripts/export_final_package_m04.py [mtag] [bins] [rerun] [out] [layout]
+#   default: m04 data_proxy_margin/7x5_margin04 results_g5truth/rerun_m04 \
+#            results_final_m04 configs/bolt_layouts/7x5_margin04.json
+#   m5 ver.: m05 data_proxy_margin/7x5_margin05_fine results_g5truth/rerun_m05_fine \
+#            results_final_m05 configs/bolt_layouts/7x5_margin05.json
 #
 # Surfaces use pipeline convention: w(x,z;theta) = g_theta(x,z) + sum_b h_b*phi_b
 # with h_b = h_pipe from BEST_bolts.txt (renderer-exact). Stroke table lists
@@ -19,9 +23,15 @@ from ansys_gravity import load_bolt_layout, bolt_positions
 
 MIRRORS = ["North", "East", "South", "West"]
 ANGLES = [10, 30, 58]
-BINS = os.path.join(ROOT, "data_proxy_margin/7x5_margin04")
-RERUN = os.path.join(ROOT, "results_g5truth/rerun_m04")
-OUT = os.path.join(ROOT, "results_final_m04")
+MTAG = sys.argv[1] if len(sys.argv) > 1 else "m04"
+BINS = os.path.join(ROOT, sys.argv[2] if len(sys.argv) > 2
+                    else "data_proxy_margin/7x5_margin04")
+RERUN = os.path.join(ROOT, sys.argv[3] if len(sys.argv) > 3
+                     else "results_g5truth/rerun_m04")
+OUT = os.path.join(ROOT, sys.argv[4] if len(sys.argv) > 4
+                   else "results_final_m04")
+LAYOUT = os.path.join(ROOT, sys.argv[5] if len(sys.argv) > 5
+                      else "configs/bolt_layouts/7x5_margin04.json")
 W, L, GS = 12.84, 9.45, 32
 
 
@@ -36,16 +46,15 @@ def load_bolts(mirror):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    layout = load_bolt_layout(os.path.join(
-        ROOT, "configs/bolt_layouts/7x5_margin04.json"))
+    layout = load_bolt_layout(LAYOUT)
     pos = bolt_positions(layout)
 
     # ---- 1. layout + stroke table CSV ----
     bolts = {m: load_bolts(m) for m in MIRRORS}
     csv_path = os.path.join(OUT, "bolt_layout_and_strokes.csv")
     with open(csv_path, "w") as fh:
-        fh.write("# m*=0.04 final package: 7x5 layout (margin 0.04) + truth-reoptimized bolts\n")
-        fh.write("# source: results_g5truth/rerun_m04 (ANSYS-truth gravity, 100 iter @110dir)\n")
+        fh.write(f"# {MTAG} final package: 7x5 layout + truth-reoptimized bolts\n")
+        fh.write(f"# source: {RERUN} (ANSYS-truth gravity, 100 iter @110dir)\n")
         fh.write("idx,x_m,z_m," + ",".join(f"{m}_stroke_mm" for m in MIRRORS) + "\n")
         for i, (bx, bz) in enumerate(pos):
             row = [f"{i}", f"{bx:.4f}", f"{bz:.4f}"]
@@ -105,8 +114,8 @@ def main():
         fig.colorbar(im0, ax=axes[0, :].tolist(), shrink=0.8, label="w (mm)")
         fig.colorbar(im1, ax=axes[1, :].tolist(), shrink=0.8,
                      label="|slope| (mrad)")
-        fig.suptitle(f"m*=0.04 truth field + truth-reoptimized bolts, "
-                     f"tilt {ang} deg (m04 ANSYS truth)")
+        fig.suptitle(f"{MTAG} truth field + truth-reoptimized bolts, "
+                     f"tilt {ang} deg (ANSYS truth, fine-substep)")
         fig.savefig(os.path.join(OUT, f"fig_surface_{ang}deg.png"),
                     dpi=160, bbox_inches="tight")
         plt.close(fig)
