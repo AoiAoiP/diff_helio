@@ -410,7 +410,7 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
 | `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
 | `docs/gravity_compensation_experiment.md` | **重力补偿 Phase 0–4 主报告**：基线/9 组消融终表/差距三分解/台式机幻影重力事故与双机校验规程（2026-07-30） |
-| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-07-31 四文档整合）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a)(c) 完成，m\*=0.04 真值确认**） |
+| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-07-31 四文档整合）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a)(c)(d)+真值修正批完成，m\*≈0.04–0.05、红利 −26.8%**） |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
 | `analysis/p0p1_merge_validation.md` | P0+P1 合并树端到端验证纪要（2026-07-20） |
@@ -542,4 +542,4 @@ APDL=GUI 位精确一致性已确认，但 **Proxy vs FEA 仍存在系统性偏�
 
 早期整体替换调研（`docs/plate_proxy_replacement_research.md`：POD-ROM、Kirchhoff Green 函数、模态展开、PINN/算子学习、POD+MLP）已证明**整体替换既不必要也不可行**。
 
-Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c)(d) 完成（m\*=0.04 真值口径确认；脚本版 m08 统一口径；分支三轮裁决——细子步/rotfix/细网格均不翻转，GUI 翻转不可复现，**同族 margin 红利收敛 m08→m04 = −33.6%**），见 `docs/phase5_structural_optimization.md` §3.6/§3.7。
+Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c)(d) + **真值修正批**完成：粗子步跳支伪影识别并清除（m04/m06 bins 与 GUI m08 的 46°+ 翻转全属伪影，准静态真值=细子步光滑分支、全部 margin 不翻转），**终版真值曲线 m\*≈0.04–0.05（点估计 0.05，四镜合计 281.2）、同族 margin 红利 −26.8%**（m05 vs m08 384.4；原 m04 255.3/−33.6% 作废）；ROM 最优点带判断幸存、系统性偏低 5–8%（v2 按细子步光滑分支重标定 alpha）。详见 `docs/phase5_structural_optimization.md` §3.6–§3.9。

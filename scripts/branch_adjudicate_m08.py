@@ -23,8 +23,15 @@ PATCH_TO = "NSUBST,50,500,50"
 # --rotfix: additionally fix rotations at bolt patches (Workbench "Fixed
 # Support" fixes all 6 DOF; script template fixes translations only).
 # --meshfine: 128x96 mapped mesh (mesh-convergence check of the branch).
+# --layout=<path>: bolt layout JSON (default 7x5_default = m08).
+# --angles=a,b,c: override angle list.
 ROTFIX = "--rotfix" in sys.argv
 MESHFINE = "--meshfine" in sys.argv
+LAYOUT = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--layout=")),
+              "configs/bolt_layouts/7x5_default.json")
+_ang = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--angles=")), None)
+if _ang:
+    ANGLES = [float(x) for x in _ang.split(",")]
 if MESHFINE:
     ANGLES = [46, 50, 58]
 
@@ -37,7 +44,7 @@ def w_stats(csv_path, ang):
 
 
 def main():
-    layout = load_bolt_layout(str(ROOT / "configs/bolt_layouts/7x5_default.json"))
+    layout = load_bolt_layout(str(ROOT / LAYOUT))
     if MESHFINE:
         layout["mesh_ndiv_x"] = 128
         layout["mesh_ndiv_z"] = 96
@@ -47,6 +54,7 @@ def main():
     print(f"{'ang':>4} | {'fine_mean':>9} {'fine_PV':>8} {'bisect':>6} | "
           f"{'coarse_mean':>11} {'PV':>6} | {'GUI_mean':>8} {'PV':>6}   (mm)")
     for ang in ANGLES:
+        atag = int(ang) if float(ang).is_integer() else ang
         work = tempfile.mkdtemp(prefix=f"branch_{ang}deg_", dir=str(ROOT / "build"))
         try:
             dat, csv = generate_apdl_input(layout, float(ang), positions, "", work)
@@ -66,7 +74,7 @@ def main():
             tag = "rotfix" if ROTFIX else ("meshfine" if MESHFINE else "fine")
             ok = run_ansys(dat, work, ANSYS_EXE)
             if not ok or not os.path.exists(csv):
-                print(f"{ang:4d} | ANSYS FAILED ok={ok}", flush=True)
+                print(f"{atag:>4} | ANSYS FAILED ok={ok}", flush=True)
                 continue
             shutil.copy(csv, out_dir / f"node_dump_{ang}deg_{tag}.csv")
             jobname = os.path.splitext(os.path.basename(dat))[0]
@@ -75,11 +83,19 @@ def main():
             if os.path.exists(outlog):
                 bis = open(outlog, errors="ignore").read().lower().count("bisection")
             fm, fp = w_stats(csv, ang)
-            cm, cp = w_stats(ROOT / "data_proxy_margin/7x5_margin08/ansys_csv"
-                             f"/node_dump_{ang}deg.csv", ang)
-            gm, gp = w_stats(ROOT / f"data_proxy/ansys_csv/node_dump_{ang}deg.csv", ang)
-            print(f"{ang:4d} | {fm:9.3f} {fp:8.2f} {bis:6d} | "
-                  f"{cm:11.3f} {cp:6.2f} | {gm:8.3f} {gp:6.2f}", flush=True)
+            atag = int(ang) if float(ang).is_integer() else ang
+            mtag = os.path.basename(LAYOUT).replace(".json", "")
+            if mtag == "7x5_default":
+                mtag = "7x5_margin08"
+            coarse_csv = ROOT / f"data_proxy_margin/{mtag}/ansys_csv/node_dump_{atag}deg.csv"
+            gm, gp = w_stats(ROOT / f"data_proxy/ansys_csv/node_dump_{atag}deg.csv", ang)
+            if coarse_csv.exists():
+                cm, cp = w_stats(coarse_csv, ang)
+                print(f"{atag:>4} | {fm:9.3f} {fp:8.2f} {bis:6d} | "
+                      f"{cm:11.3f} {cp:6.2f} | {gm:8.3f} {gp:6.2f}", flush=True)
+            else:
+                print(f"{atag:>4} | {fm:9.3f} {fp:8.2f} {bis:6d} | "
+                      f"{'(no coarse)':>11} {'':>6} | {gm:8.3f} {gp:6.2f}", flush=True)
         finally:
             shutil.rmtree(work, ignore_errors=True)
 

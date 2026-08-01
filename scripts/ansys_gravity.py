@@ -69,7 +69,8 @@ def bolt_positions(layout):
     return positions
 
 
-def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
+def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir,
+                        nsubst="1,10,1"):
     """Generate ANSYS APDL input for gravity simulation at angle_deg.
 
     Models the plate TILTED about X-axis (matching Workbench GUI approach):
@@ -175,7 +176,7 @@ def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir):
     lines.append("ANTYPE,STATIC")
     lines.append("NLGEOM,ON")
     lines.append("AUTOTS,ON              ! auto time stepping (match GUI)")
-    lines.append("NSUBST,1,10,1           ! initial=1, max=10, min=1 (match GUI)")
+    lines.append(f"NSUBST,{nsubst}           ! initial,max,min substeps")
     lines.append("OUTRES,ALL,ALL")
     lines.append("PIVCHECK,0             ! disable pivot checking")
     lines.append("PRED,ON                ! predictor (match GUI)")
@@ -301,6 +302,9 @@ def main():
                    help="Path to ANSYS MAPDL executable")
     p.add_argument("--keep-temp", action="store_true",
                    help="Keep temporary ANSYS working files")
+    p.add_argument("--nsubst", default="1,10,1",
+                   help="NSUBST initial,max,min (default '1,10,1'; use e.g. "
+                        "'50,500,50' for quasi-static branch fidelity)")
     p.add_argument("--dry-run", action="store_true",
                    help="Generate APDL files but don't run ANSYS")
     args = p.parse_args()
@@ -321,6 +325,7 @@ def main():
     print(f"  Plate:    {W}x{L}m, t={layout['plate_thickness_m']*1000}mm")
     print(f"  Grid:     {GS}x{GS}")
     print(f"  Angles:   {len(args.angles)} bins, {args.angles[0]}°–{args.angles[-1]}°")
+    print(f"  NSUBST:   {args.nsubst}")
     print(f"  ANSYS:    {args.ansys_exe}")
     print(f"  Output:   {args.output_dir}/")
 
@@ -342,7 +347,7 @@ def main():
         try:
             # Generate APDL
             dat_path, expected_csv = generate_apdl_input(
-                layout, ang, positions, "", work_dir)
+                layout, ang, positions, "", work_dir, nsubst=args.nsubst)
 
             if args.dry_run:
                 print(f"APDL: {dat_path} (dry-run, skip ANSYS)")
