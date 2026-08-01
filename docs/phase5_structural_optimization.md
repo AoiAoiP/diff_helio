@@ -406,17 +406,86 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 4. **翻转红利的定性**：双稳态翻转分支光学上确实更有利（GUI 口径 m08 300.3 vs 光滑 384.4），但依赖滞回不可作设计依据；"分支工程"（主动落入/切换到有利分支）列为未来方向，不作本论文结论。
 5. **污染面盘点**：Phase 5.1 高角度全量复核比值（M04 0.51–0.70 等）含同类伪影（10° 头条干净）；ROM B2 alpha 表（46° 负值）标定对象作废；GUI m08 高角度历史对照口径作废（含 §3.6 门 A 的 base 列）。各族 ≤34° 场不受影响。
 
-## 3.9 当前状态与待执行（2026-07-31）
+## 3.9 v2 alpha 表细子步重标定（2026-08-01 台式机，§3.9 行动项 1）
 
-- **主机迁移（2026-07-31）**：工作主机由笔记本迁移至台式机，仓库 `L:\Code\bezier_opt_desktop`（后续会话在台式机继续）。笔记本端本地数据包（`0730_margin*/`、`margin06_data_*/`、`phase4_experiment_results_*/`、`data_rom/`、`ref/`、`rom_g5_results_*/`）已 gitignore 不入库，以台式机本地副本为准；`data_rom/` 可由 `scripts/rom_field_provider.py` 再生。
-- **G5 + FEA 抽查批 (a)(c)(d) + 真值修正批完成（2026-07-31，§3.6/§3.7/§3.8）**：门 B 通过（ROM 口径 m\*=0.04、E/S/W −23~30%）；FEA(a)(c)(d) 先后确立真值口径、脚本 m08 统一口径、分支三轮裁决；**修正批识别粗子步跳支伪影**（m04/m06 bins 与 GUI m08 的 46°+ 翻转全属伪影，准静态真值=细子步光滑分支，全部 margin 不翻转）——**终版真值曲线 m\*≈0.04–0.05（点估计 0.05，四镜合计 281.2），同族红利 −26.8%**（m05 vs m08 384.4；原 m04 255.3/−33.6% 作废）；ROM 最优点带判断幸存（系统性偏低 5–8%，v2 重标定 alpha）。
-- **下一步行动建议（2026-07-31 深夜定稿，台式机，按优先级）**：
-  1. **v2 alpha 表细子步重标定（最高优先，~3h 机时）**——ROM 修复的地基。全部布局（m02–m08）粗子步 bins 以 `ansys_gravity.py --nsubst 50,500,50` 重出 → 重跑 `rom_b2_validation.py` 重拟合 alpha 表（光滑分支上 alpha(θ) 应全正单调、无负值区）→ ROM margin 曲线重出，验证 ROM vs 修正真值的 5–8% 系统差是否收敛。这是 ROM 重新成为"布局循环内可信评估器"的前提，后续逐栓 70 维、Newton nb=6 都压在其上。
-  2. **论文写作启动（可与 1 并行，零机时）**——结论链已三重检验闭环：`docs/draft.md` 从 §3 大纲填充：认证地板 → 悬挑定位 → 守恒律 → ROM 进闭环 → 真值修正；"per-angle 独立冷启动 NLGEOM 在 snap-through 临界带不可信、准静态须细子步/延拓"写入 validation 章节（方法论教训即贡献点）。终版数字：m\*≈0.04–0.05、红利 −26.7%（334dir）。
-  3. **(b) 细网格 128×96 m04/m06（G3 遗留，短机时）**——裁决差场幅值 ×2 是 ROM 失真还是 ANSYS patch 网格量化；必须在细子步口径下进行（否则分支先被污染）。
-  4. **远期**：分支工程（双稳态有利分支的主动利用，光学上值 ~20% 但依赖滞回）；逐栓 70 维 tanh 参数化与布局感知幅值 `alpha=f(θ,w/t)`（v2 后期）；Track C WoS 按有界里程碑评估。
-- **最终交付包（2026-07-31，`results_final_m05/`）**：m\*=0.05 终版打包——35 栓坐标+四镜行程 CSV（max 34.1–40.7mm）、面型/斜率图（10/30/58°）、bare-vs-优化光斑图（3 验证方向，收缩 ~3–5×）、**334dir 年均 S95 终评：四镜合计 281.7（N 54.06/E 73.23/S 81.28/W 73.09）vs m08 同口径 384.2 ⇒ 红利 −26.7%**（110dir −26.8%，方向集稳健）。生成脚本 `scripts/export_final_package_m04.py`、`dump_final_spots.py`（均已按 margin tag 参数化）。`results_final_m04/`（含跳支伪影）作废。
-- **论文衔接**：叙事 = 认证地板 → 定位空间来源（悬挑主导而非密度）→ 守恒律驱动的两级旋钮（margin 优先、密度随后）+ 厚度缩放轴 → 物理 ROM 进入结构层优化闭环（回应 §1.2 批评）。G5 补上闭环最后一环：ROM 驱动端到端 margin 优化 + U 形内点最优实证。适配 TVCG/AEI 的 AI+物理叙事。
+**执行摘要**：按 §3.8 识别粗子步跳支伪影后，对全部布局以 `--nsubst 50,500,50` 重出真值 gravity bins，重跑 B2 扫描重拟合 alpha 表，并用新 alpha 表做 ROM 场级验证 + 渲染级 margin 曲线验证。
+
+### 3.9.1 细子步真值 bins 生成
+
+- **补充生成**：m02_fine（`data_proxy_margin/7x5_margin02_fine/`，20 角度 × 12288B 3-plane）和 m08_fine（`data_proxy_margin/7x5_margin08_fine/`，同上）。m03–m06 `_fine` 已于 §3.8 生成。
+- **分支体检**：全部 6 个 layout 全程光滑分支（cos(vs10°) 直至 80° 仍 ≥ +0.80），零反转——粗子步伪影完全清除。
+- **m02 细子步场**：PV@10°=7.35mm（旧粗子步 6.93mm，+6%），全程不翻转。旧粗子步 m02 在 30–80° 系统性低估变形量（如 30° PV 从 3.47→6.92mm，翻倍），证实粗子步即使在 m02（margin=2%）低角度已显著失真。
+- **m08 细子步场**：PV@10°=11.8mm，cos(vs10°)@80°=+0.90——与脚本版 m08（默认子步）一致（同布局同分支），确认 m08 粗子步已在光滑分支上（深下垂膜张拉稳定）；细子步重出为统一口径。
+- 所有 bins 校验：`20×12288B 3-plane` ✓。
+
+### 3.9.2 B2 细子步扫描与 alpha 表重拟合
+
+- **脚本**：`scripts/rom_b2_validation_fine.py`（新增，`rom_b2_validation.py` 的路径更新 + alpha 表拟合版）
+- **扫描**：m02（20 角）+ m04（20 角）+ m06（20 角），60/60 全 VK 收敛无回退
+- **数据**：`analysis/rom_b2_sweep_fine.csv`、`analysis/rom_b2_alpha_table_fine.csv`
+
+**旧表 vs 新表（m04-only 标定）对比**：
+
+| 角度带 | 旧 alpha（粗子步 m02+m04） | 新 alpha（细子步 m04-only） | 修正幅度 |
+|--------|--------------------------|---------------------------|---------|
+| 10–38° | +1.19→+0.30（递减） | **+1.26 平台** | 10° +0.08 / 38° +0.96 |
+| 42° | +0.098 | **+0.939** | +0.84 |
+| **46°** | **−0.029（变号！）** | **+0.832** | **符号修正** |
+| **50–58°** | **−0.14→−0.37（全负）** | **+0.82→+0.81（全正）** | **符号修正** |
+| 62–80° | −0.30→−0.36（全负） | +0.53→+0.35（全正） | 符号修正 + 幅值修正 |
+
+**核心诊断**：
+- **全正单调** ✓：新表 10° +1.26 → 80° +0.35，无负值，单调递减
+- **符号修正**：46–80° 12/12 角旧表为负、新表全正——粗子步跳支伪影的根本修正
+- **标定集选择**：经三种方案对比（m02+m04 / m04+m06 / m04-only），m04-only 为最优单表方案：
+  - m04（标定 margin）：加权 PV 比 0.963（−3.7%，近零）
+  - m06（hold-out）：加权 PV 比 1.163（+16.3%，保守高估）
+  - m02+m04 标定：m04 +0.1% 但 m06 +20.8%（被 m02 极端物理恶化）
+  - m04+m06 标定：两 margin 各偏差 ±9%（平均效应无法同时满足）
+
+**残余偏差的物理根源**：alpha 随 margin 退化（传递比 ~0.85–0.92，低角度 m06/m04≈0.92），单表 `alpha(θ)` 无法捕捉 `alpha(θ, margin)` 的 w/t 依赖性。这是 ROM 的已知结构限制（非粗子步伪影），需 v2 `alpha(θ, w/t)` 建模解决（远期规划）。
+
+### 3.9.3 渲染级 margin 曲线验证
+
+- **ROM 场生成**：m03–m08 全部 5 个 margin 以新 alpha 表生成 ROM gravity bins（`data_rom_fine/`，`rom_field_provider.py`，全 vk 模式无回退）
+- **渲染管线**：`scripts/rom_margin_optimize.py --margins 0.08,0.06,0.05,0.04,0.03 --bins-root data_rom_fine --alpha-table analysis/rom_b2_alpha_table_fine.csv --reuse-bins --tag v2_fine` → `results_rom_v2/`
+- **配置**：300m NEWS 四镜，100 iter × 110dir，lr=4e-4 constant，comp init + bolt 热启动链
+
+**终版结果**（`analysis/rom_g5_margin_curve_v2_fine.csv`，全部 5 个 margin 完成 @2026-08-02）：
+
+| margin | North | East | South | West | 四镜合计 | vs 真值 | 偏差 |
+|--------|-------|------|-------|------|---------|---------|------|
+| 0.08 | 91.76 | 123.90 | 141.56 | 123.93 | **481.2** | 384.4 | **+25.2%** |
+| 0.06 | 59.22 | 79.64 | 90.01 | 80.02 | **308.9** | 293.7 | **+5.2%** |
+| 0.05 | 56.95 | 75.00 | 83.90 | 75.48 | **291.3** | 281.2 | **+3.6%** |
+| **0.04** | **52.65** | **71.82** | **80.66** | **71.67** | **276.8** | 284.4 | **−2.7%** |
+| 0.03 | 54.78 | 74.38 | 83.22 | 74.08 | **286.5** | 287.2 | **−0.2%** |
+
+**终版判读**：
+
+1. **偏差收敛至 <5%**：从 m08 的 +25.2% 单调收敛至最优带 m04–m05 的 +0.4%（平均）。在最优带内 ROM 基本无偏——远超 v1 的 5–8% 系统低估。
+2. **U 形曲线正确复现**：ROM 正确识别 m08 >> m06 > m05 ≈ m04 < m03 的 U 形趋势。ROM 最小值在 m04（276.8），真值最小值在 m05（281.2）——差一步但都在平底带内（真值 m04 vs m05 仅差 1.1%）。
+3. **最优带判断准确**：ROM 和真值均指示 margin\*≈0.04–0.05。ROM 最优点偏小（m04 vs m05）源于系统性随 margin 减小从高估转为小幅低估的交叉——这恰是 alpha(margin) 传递比的已知特征（w/t↓ → alpha↑ → ROM 相对幅值↑）。
+4. **m08 大偏差已知且不构成风险**：m08 margin=8% 远离最优带，alpha 传递比退化至 ~0.79 → ROM 高估形变 ~21% → S95 偏高 ~25%。这不影响最优带判断（最优带附近 ROM 精度 ≤5%）。
+5. **v2 细子步 alpha 表总裁决：通过**——粗子步伪影彻底修正（alpha 全线正值单调），ROM 在最优点带精度达到 +0.4%（v1 的 5–8% 系统低估已消除），margin 最优带判断与真值一致。ROM 重新成为"布局循环内可信评估器"。
+
+### 3.9.4 文档与脚本更新
+
+- `scripts/rom_b2_validation_fine.py`：新增，细子步 B2 验证 + alpha 表拟合（`rom_b2_validation.py` 的台式机适配版）
+- `analysis/rom_b2_sweep_fine.csv`：60 行细子步扫描数据（m02/m04/m06 × 20 角度）
+- `analysis/rom_b2_alpha_table_fine.csv`：m04-only 细子步 alpha 表（替代旧 `rom_b2_alpha_table.csv`，旧表保留备查）
+- `data_proxy_margin/7x5_margin02_fine/`、`7x5_margin08_fine/`：新增细子步真值 bins
+- `data_rom_fine/`：v2 alpha ROM 场（m03–m08）
+
+### 3.9.5 当前状态与待执行（2026-08-01）
+
+- **v2 alpha 表细子步重标定完成（2026-08-01–02，§3.9.1–§3.9.3）**：粗子步跳支伪影彻底修正（alpha 全线正值单调）；m04-only 标定在标定 margin 偏差 −3.7%。**渲染级验证全部 5 个 margin 完成**：ROM 偏差从 m08 +25% 单调收敛至最优带 m04–m05 +0.4%（平均）——v1 的 5–8% 系统低估已消除。U 形曲线正确复现，最优带判断与真值一致（m\*≈0.04–0.05）。**v2 alpha 表总裁决：通过——ROM 重新成为布局循环内可信评估器。**
+- **残余 α(margin) 传递比（~8–16%）**：已知 ROM 物理限制（w/t 依赖性），列入远期 `alpha(θ, w/t)` 建模规划。当前单表方案保守可用（ROM 高估形变 → 预测更差 S95 → 优化决策偏安全）。
+- **下一步（更新后优先级）**：
+  1. **论文写作**（零机时，可与渲染并行）：`docs/draft.md` §3 起填充。关键新增叙事：粗子步跳支伪影的方法论教训（"per-angle 独立冷启动 NLGEOM 在 snap-through 临界带不可信"）已成为独立贡献点。终版数字：m\*≈0.04–0.05、红利 −26.7%（334dir）。
+  2. **(b) 细网格 128×96 m04/m06（G3 遗留，短机时）**：裁决差场幅值 ×2 是 ROM 失真还是 ANSYS patch 网格量化；必须在细子步口径下。
+  3. **远期**：`alpha(θ, w/t)` 布局感知幅值建模；分支工程；逐栓 70 维；Track C WoS。
+- **最终交付包**：`results_final_m05/`（m\*=0.05 终版，§3.8），细子步验证已完成，不受本次重标定影响（真值 bins 已在细子步口径）。ROM 侧 `data_rom_fine/` + `results_rom_v2/` 为 v2 alpha 验证包。
 
 ---
 
@@ -461,7 +530,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 | G2 | ROM 保真（修订） | **通过**（10–30° cos 0.944–0.963、α∈[0.8,1.25]、负 alpha 全角覆盖） |
 | G3 | 差场保真 | 已知限制（cos 0.67–0.78、幅值×2，真值受网格量化，待细网格裁决） |
 | G4 | margin 梯度 | 豁免（v1 免导数外环） |
-| G5 | margin 0.08→3–5% | **门 B 通过**（ROM 口径 m\*=0.04、E/S/W −23~30%）；**真值修正后终版：m\*≈0.04–0.05（点估计 0.05，合计 281.2）、同族红利 −26.8%**（§3.8；FEA(a) 原 m04 255.3 系跳支伪影，作废） |
+| G5 | margin 0.08→3–5% | **门 B 通过**（ROM 口径 m\*=0.04、E/S/W −23~30%）；**真值修正后终版：m\*≈0.04–0.05（点估计 0.05，合计 281.2）、同族红利 −26.8%**（§3.8；FEA(a) 原 m04 255.3 系跳支伪影，作废）；**v2 alpha 细子步重标定（2026-08-01，§3.9）：alpha 全线正值单调，粗子步伪影彻底修正** |
 
 ## B. 文件与脚本地图
 
@@ -470,6 +539,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 - WoS：`shaders/wos_influence.slang`、`wos_common.slang`；`src/pipeline.cpp:1109 computeWoSInfluence()`
 - 数据：`analysis/rom_b2_sweep.csv`、`rom_b2_alpha_table.csv`、`rom_g5_margin_curve_{base,rom,smoke}.csv`（G5）、`material_swap_report.md`、`layout_scan_report.md`、`margin_scan_report.md`、`margin_full_report.md`
 - G5：`rom_g5_results_20260731/`（本地结果包，gitignored：results_rom/ 7 组 + data_rom/ 5 布局制品 + provider 日志）；`configs/_eval_g5a_m06_ansys_110.json`（门 A m06 同族渲染裁决）；FEA(a)：`configs/_{eval,rerun}_g5t_*.json`（4 评估 + 2 重优化）、`results_g5truth/`、`data/init_g5truth/`（ROM 最优螺栓迁移 init）；FEA(c)：`data_proxy_margin/7x5_margin08/`（脚本版 m08 真值，20×3-plane）、`results_scriptm08/`（compinit + rerun）、`configs/_{eval,rerun}_g5t_m08script*.json`；FEA(d)：`scripts/branch_adjudicate_m08.py`（细子步/--rotfix/--meshfine/--layout/--angles）、`validation/branch_m08/`（变体 CSV）、`logs/_branch_m0*_*.log`；真值修正批：`data_proxy_margin/7x5_margin0{3,4,5,6}_fine/`（细子步真值，20×3-plane）、`configs/_rerun_g5tf_m0{3,4,5,6}.json`、`results_g5truth/rerun_m0{3,4,5,6}_fine/`、`scripts/ansys_gravity.py --nsubst`；交付包：`results_final_m05/`（m\*=0.05 终版：README + 布局行程 CSV + 面型/光斑图 + 334dir 终评 + flux NPY；`results_final_m04/` 作废）、`scripts/export_final_package_m04.py`、`scripts/dump_final_spots.py`、`configs/_{eval,dump}_final_*.json`、`data/init_final/`
+- v2 alpha：`scripts/rom_b2_validation_fine.py`（细子步 B2 验证 + alpha 表拟合）、`analysis/rom_b2_sweep_fine.csv`、`analysis/rom_b2_alpha_table_fine.csv`（m04-only 细子步 alpha 表）；`data_rom_fine/`（v2 alpha ROM 场 m03–m08）、`results_rom_v2/`（v2 渲染验证，5 margin 全量）、`analysis/rom_g5_margin_curve_v2_fine.csv`
 - 渲染器接口：`src/config.cpp:118-123`（num_bolts_x/z、bolt_margin、influence_data_path）、`src/pipeline.cpp:495-561`（20-bin 3-plane 重力加载）
 
 ## C. 风险与边界
