@@ -487,6 +487,28 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
   3. **远期**：`alpha(θ, w/t)` 布局感知幅值建模；分支工程；逐栓 70 维；Track C WoS。
 - **最终交付包**：`results_final_m05/`（m\*=0.05 终版，§3.8），细子步验证已完成，不受本次重标定影响（真值 bins 已在细子步口径）。ROM 侧 `data_rom_fine/` + `results_rom_v2/` 为 v2 alpha 验证包。
 
+### 3.9.6 Phase 5.3 计划：最优 margin 下的螺栓密度扫描（2026-08-02 设计）
+
+> 完整实验方案见 `docs/phase5_density_at_optimal_margin.md`。
+
+**核心问题**：Phase 5.0 在 margin=8% 下宣告"密度轴死亡"（+80% 螺栓仅 −4.2% 地板），但当时悬挑带主导 81–91% 斜率能量。现在 m\*≈0.05 已收敛，悬挑从 ~1m 缩至 ~0.3m，密度回报是否显著？
+
+**实验布局**（均 margin=0.05，细子步）：
+
+| 布局 | 螺栓 | Δx (m) | Δz (m) | vs 7×5 | JSON |
+|------|------|--------|--------|--------|------|
+| D1 5×3 | 15 (−57%) | 3.050 | 4.489 | 稀疏 | `configs/bolt_layouts/density/5x3_margin05.json` |
+| D2 7×5 | **35 (基线)** | 2.033 | 2.245 | ref | 已有 `7x5_margin05_fine` bins |
+| D3 9×7 | 63 (+80%) | 1.525 | 1.496 | 密度上限 | `configs/bolt_layouts/density/9x7_margin05.json` |
+| D4 11×9 | 99 (+183%) | 1.220 | 1.122 | 渐近线 | `configs/bolt_layouts/density/11x9_margin05.json` |
+
+**假想结果空间**（三种情景均可发表）：
+- **情景 A（密度显著）**：悬挑收敛后内部凹陷成为瓶颈 → 密度回报 >15%，修正 Phase 5.0 "密度无用"的片面结论
+- **情景 B（密度微弱）**：H₀ 成立，7×5+m\*≈0.05 即 Pareto 最优 → 颜健 N 递减回报推广至 S95 域
+- **情景 C（5×3 已足够）**：TPS 单位分解性使少量螺栓已覆盖主导子空间 → 强烈排序 margin >> density
+
+**机时**：ANSYS ~15h（可并行至 ~5h），GPU ~7.5h。总人时 ~6h，可一日完成。
+
 ---
 
 # 附录

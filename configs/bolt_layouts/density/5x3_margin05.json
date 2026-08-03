@@ -1,0 +1,15 @@
+{
+  "description": "Phase 5.3 density scan D1: 5x3=15 bolts, margin=0.05. Sparse grid - spans dx=3.050m dz=4.489m at optimal margin, probing the lower density bound before floor collapse.",
+  "bolts_x": 5,
+  "bolts_z": 3,
+  "margin": 0.05,
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.004,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

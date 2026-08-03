@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 W = 12.84
 L = 9.45
 GS = 32
-NB = 35
+NB = None  # auto-detected from influence_phi.bin size (n_floats / GS²)
 
 ANGLES_20BIN = [10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
                 50, 54, 58, 62, 66, 70, 73, 76, 78, 80]
@@ -116,15 +116,19 @@ def main():
     Xg, Zg = pixel_grid()
 
     # --- influence data: values + analytic derivatives ---
-    phi = np.fromfile(data_proxy / 'influence_phi.bin', dtype=np.float32).reshape(NB, GS * GS)
-    phi_u = np.fromfile(data_proxy / 'influence_phi_u.bin', dtype=np.float32).reshape(NB, GS * GS)
-    phi_v = np.fromfile(data_proxy / 'influence_phi_v.bin', dtype=np.float32).reshape(NB, GS * GS)
-    Phi = phi.T                                          # (GS*GS, NB) height design
+    phi_raw = np.fromfile(data_proxy / 'influence_phi.bin', dtype=np.float32)
+    nb = len(phi_raw) // (GS * GS)
+    if NB is not None and NB > 0:
+        nb = NB
+    phi = phi_raw.reshape(nb, GS * GS)
+    phi_u = np.fromfile(data_proxy / 'influence_phi_u.bin', dtype=np.float32).reshape(nb, GS * GS)
+    phi_v = np.fromfile(data_proxy / 'influence_phi_v.bin', dtype=np.float32).reshape(nb, GS * GS)
+    Phi = phi.T                                          # (GS*GS, nb) height design
     # physical slope design: d phi/dx = phi_u / W, d phi/dz = phi_v / L
-    A = np.vstack([(phi_u / W).T, (phi_v / L).T])        # (2*GS*GS, NB) slope design
+    A = np.vstack([(phi_u / W).T, (phi_v / L).T])        # (2*GS*GS, nb) slope design
 
     # --- slope Gram for the anchor metric: G_bb' = <grad phi_b, grad phi_b'> ---
-    G = A.T @ A                                          # (NB, NB)
+    G = A.T @ A                                          # (nb, nb)
 
     slopes = load_gravity_slopes(data_proxy)
     mirrors = load_mirrors(args.ellipse_file)
@@ -171,12 +175,12 @@ def main():
             for i, hi in enumerate(h_star):
                 f.write(f'{i} {hi:.8f}\n')
 
-        # --- write anchor buffer: [G (NB*NB row-major)] + [G @ h* (NB)] ---
+        # --- write anchor buffer: [G (nb*nb row-major)] + [G @ h* (nb)] ---
         anchor_path = out_dir / f"{m['name']}_anchor.bin"
         target = G @ h_star
         np.concatenate([G.ravel(), target]).astype(np.float32).tofile(anchor_path)
-        meta = {'mirror': m['name'], 'layout': 'float32[NB*NB] G row-major, then float32[NB] G@h*',
-                'nb': NB, 'sundir': os.path.basename(args.sundir),
+        meta = {'mirror': m['name'], 'layout': f'float32[{nb}*{nb}] G row-major, then float32[{nb}] G@h*',
+                'nb': nb, 'sundir': os.path.basename(args.sundir),
                 'h_shape_pv_mm': float(np.ptp(h_shape) * 1e3),
                 'h_comp_pv_mm': float(np.ptp(h_comp) * 1e3)}
         (out_dir / f"{m['name']}_anchor.json").write_text(json.dumps(meta, indent=1))
