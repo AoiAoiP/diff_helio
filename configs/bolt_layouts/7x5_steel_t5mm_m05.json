@@ -1,0 +1,15 @@
+{
+  "description": "Steel 5mm at optimal margin 5%: 7x5 bolts, steel (E=206GPa nu=0.30 rho=7800 per KeshengV3), t=5mm. Expected alpha ~0.64 vs glass 4mm from w~1/t^2 scaling.",
+  "bolts_x": 7,
+  "bolts_z": 5,
+  "margin": 0.05,
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.005,
+  "youngs_modulus_pa": 206000000000.0,
+  "poisson_ratio": 0.30,
+  "density_kg_m3": 7800,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

@@ -410,7 +410,9 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
 | `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
 | `docs/gravity_compensation_experiment.md` | **重力补偿 Phase 0–4 主报告**：基线/9 组消融终表/差距三分解/台式机幻影重力事故与双机校验规程（2026-07-30） |
-| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-07-31 四文档整合）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a)(c)(d)+真值修正批完成，m\*≈0.04–0.05、红利 −26.8%**）+ **v2 alpha 细子步重标定（2026-08-01 完成，ROM@最优带偏差 +0.4%）** |
+| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-08-03 更新）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴（含钢 t5mm 端到端闭环）/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a)(c)(d)+真值修正批完成，m\*≈0.04–0.05、红利 −26.8%**）+ **v2 alpha 细子步重标定（ROM@最优带偏差 +0.4%）** + Phase 5.3 密度扫描（m\*=0.05 下 4 密度 × 4 镜） |
+| `docs/phase5_density_at_optimal_margin.md` | **Phase 5.3 实验方案**：最优 margin 下的螺栓密度扫描完整设计（5×3/7×5/9×7/11×9 @ m=0.05） |
+| `docs/phase5_4_bolt_position_optimization.md` | **Phase 5.4 方案**：逐栓自由布局的端到端可微优化（B3 隐函数梯度 / Group LASSO 稀疏优化 / 子镜分面），含 G0–G5 门体系（2026-08-03） |
 | `docs/progress_2026-08-01.md` | **2026-08-01 进度总结**：v2 alpha 表细子步重标定 + 论文初稿填充（§3–§7），全部完成 |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
