@@ -34,7 +34,7 @@ cmake --build build --config Release
 python scripts/generate_proxy_model.py tps
 
 # 通过 ANSYS MAPDL 批量生成 20-bin 重力（需 ANSYS，~3 min）
-python scripts/ansys_gravity.py --bolt-layout configs/bolt_layouts/7x5_default.json
+python scripts/generate_proxy_model.py all-ansys
 
 # 将 ANSYS CSV 转换为 .bin 重力文件（v2 三平面 [w, dw/du, dw/dv] 格式）
 python scripts/generate_proxy_model.py gravity --source-dir data_proxy/ansys_csv
@@ -48,10 +48,10 @@ python scripts/generate_proxy_model.py gravity --source-dir data_proxy/ansys_csv
 
 ```bash
 # 重力下端到端优化（Phase 3 基线组，300m NEWS 四镜，36dir，100 iter）
-./build/src/Release/bezier_opt.exe configs/_fw_tanh_a0.json
+./build/src/Release/bezier_opt.exe configs/archive/_fw_tanh_a0.json
 
 # eval 模式（iterations:1, lr:0，不重训只评估）
-./build/src/Release/bezier_opt.exe configs/_eval_lsq_c1_36.json
+./build/src/Release/bezier_opt.exe configs/archive/_eval_lsq_c1_36.json
 
 # 光斑输出 / 梯度检验
 ./build/src/Release/bezier_opt.exe --dump-flux --surface-file <path> <config>
@@ -213,12 +213,12 @@ CSR 0.1 vs 0.01、镜面 12.9×9.6 vs 12.84×9.45、玻璃 3mm/n1.5 vs 4mm/1.523
 （pillbox 下 South 即吻合 66.51 vs 66.60）与斜率误差约定（σ_s 1.0→0.85mrad 即全面落入 ±5.5%、
 North −0.5%）。像素化敏感性提示：157×50px（0.4m）的 S95 面积估计对小光斑有粗粒化放大
 （同分布细像素 314×100 下数值显著下移），跨实现比对时须先统一该口径。
-结果文件：`results_lit_poly_nograv_36/`、`results_litdbg_*`、`results_lit_grav_m08_s085_36/`；
-探针配置 `configs/_litdbg_*.json`。
+结果文件：`results_litdbg_*` 已删除、`results_lit_*` 已归档（`L:/Code/_archive_bezier_paper_prep/lit_baseline.tar.gz`）；
+探针配置 `configs/archive/_litdbg_*.json`。
 
 **全参数复现尝试与残余差异定位（2026-08-06）**：按论文表 5.1 学名参数全量复现
 （CSR=0.1、镜面 12.9×9.6m、玻璃 3mm/n=1.5、接收器 0.2m 像素、σ_s=1mrad、无重力、36dir，
-数据链 `data_lit/proxy_senior/` + `data/init_lit_senior*/`，配置 `configs/_lit_senior_full_nograv_36.json`）：
+数据链 `data_lit/proxy_senior/`（已归档 lit_baseline.tar.gz）+ `data/init_lit_senior*/`，配置 `configs/archive/_lit_senior_full_nograv_36.json`）：
 **N 88.41 / E 81.24 / S 78.76 / W 81.53**——与论文值（43.38/59.03/66.60/59.03）差距 1.3–2×，
 且排序反转（我方 N 最差、S 最好；论文 N 最好、S 最差）。诊断要点：
 
@@ -245,30 +245,38 @@ North −0.5%）。像素化敏感性提示：157×50px（0.4m）的 S95 面积�
 │   ├── forward.slang / loss.slang   光线追踪 + 双折射 + Buie / S95 sigmoid 损失
 │   └── sunshape.slang             可微太阳形状 (Buie/Pillbox/Gaussian)
 ├── scripts/
-│   ├── generate_proxy_model.py    统一数据生成（TPS + v2 三平面重力）
-│   ├── ansys_gravity.py           ANSYS 批处理 20-bin 重力生成
+│   ├── generate_proxy_model.py    统一数据生成（TPS + v2 三平面重力 + ANSYS 批处理）
 │   ├── gravity_decomposition.py   重力三频带分解与可补偿性诊断（Phase 0）
 │   ├── lsq_fit_compensated.py     闭式重力补偿 init + 锚定 buffer 生成（Phase 2）
 │   ├── run_fea_validation.py      ANSYS FEA 验证（螺栓行程仿真 + proxy 对比）
 │   └── post_fea_validation.py     三路形变验证（APDL vs GUI vs Proxy）
-├── configs/                       JSON 配置（_fw_* Phase 3 消融、_eval_* 基线、_bound_* 下界）
-│   └── bolt_layouts/              螺栓布局定义 (7×5, 6×6)
+├── configs/                       JSON 配置（正式：bolt_optimize_*、sundir_cmp_* 等）
+│   ├── archive/                   一次性实验配置（_fw_* Phase 3 消融、_eval_* 基线、_bound_* 下界等）
+│   └── bolt_layouts/              螺栓布局定义 (7×5, 6x6, density/, free/)
 ├── data/                          太阳方向（36/110/334/369dir）、椭圆参数、init 螺栓
 │   ├── init_lsq/                  LSQ 椭圆拟合 init（naive）
 │   └── init_comp_36/              闭式重力补偿 init + 逐镜锚定 buffer（36dir）
 ├── data_proxy/                    TPS 影响函数 + v2 三平面重力 bins（12288 B/bin）
 ├── proxy/                         Python 侧 TPS 管线参考实现
 ├── results_fw_*/                  Phase 3 消融结果（9 组，BEST_bolts + history）
-├── results_bound_300m_36/         B* 无重力下界结果
-├── results_*_eval_*_36/           基线 eval 结果（B_ideal / B_naive / B_comp）
-├── sundir_sample/                 太阳方向采样策略分析报告
-├── docs/                          主报告、投稿策略、论文初稿、移交文档
+├── results_final_m05/             Phase 5 终版交付包（m*=0.05 布局 + 四镜行程 + 334dir 终评）
+├── results_g5truth/ results_truth/  margin / 密度 / 稀疏布局真值结果
+├── docs/                          主报告、投稿策略、论文初稿、太阳采样分析
 └── analysis/                      诊断与惩罚表报告
 ```
 
 > 2026-07-30 仓库瘦身：`train_data/`、`validation/`、`data_proxy_old/`、`wang/`、`logs/` 及
 > 过期结果目录已移出 git（FEA 原始证据留有本地归档）；历史经 filter-repo 重写，
 > 旧 commit 哈希与 bundle 全部失效，协作方请重新 clone。
+
+> 2026-08-10 论文准备大清理：一次性实验数据（`data_pos*/`、`data_proxy_margin/`、
+> `data_rom*/`、`data_lit/`、`data_proxy_steel/`、`data_proxy_scan/` 等）与全部日志已打包至
+> 仓库外 `L:/Code/_archive_bezier_paper_prep/`（9 个 tar.gz，共 ~285MB，按实验线分包）；
+> 调试残留结果（`results_litdbg_*`、`results_g2b_*`、`results_a4/*_dump` 等）已删除；
+> 98 个一次性配置移入 `configs/archive/`，一次性实验脚本移入 `scripts/experiments/`；
+> WoS / loss_gpu / countS95 死码与失效配置键（`reflection_only_optimization`、
+> `geometry_sample_grid`、`proxy_mode`）已移除（Bezier 模式代码保留）。
+> 后续材料热膨胀（CTE）补充实验数据目录约定：重建 `data_proxy_steel/` 或新建 `data_proxy_thermal/`。
 
 ---
 
@@ -320,8 +328,7 @@ North −0.5%）。像素化敏感性提示：157×50px（0.4m）的 S95 面积�
 | `docs/phase5_4_implementation_plan.md` | Phase 5.4 实施方案（基建/门体系/双轨架构）；执行中，进展见主报告 §3.10 |
 | `docs/phase6_pos_height_joint.md` | **Phase 6 栓位×行程联合优化（已收口 2026-08-07）**：bold 协议多初值批——网格选择>>位置微调（~1% 精修）、10×7 最优、无不对称涌现；含交接提示词 |
 | `docs/draft.md` | 论文初稿中文版（摘要 + 引言 + 相关工作，§3 起为大纲） |
-| `docs/experiment_handoff.md` | 双机交接记录（历史，bundle 方案已作废） |
 | `analysis/gravity_compensability_report.md` | Phase 0 重力可补偿性诊断（三频带分解、H3 预测） |
 | `analysis/real_gravity_penalty_table.md` | Phase 1 真实重力惩罚表（20 镜 A/B） |
-| `sundir_sample/` | 太阳方向采样策略分析（36/110/334dir 一致性） |
+| `docs/sundir_analysis_and_recommendations.md` 等 | 太阳方向采样策略分析（36/110/334dir 一致性，2026-08-10 起移入 docs/） |
 | `analysis/` | 其他历史分析文档 |

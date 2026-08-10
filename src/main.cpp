@@ -53,17 +53,13 @@ int main(int argc, char *argv[]) {
         std::string configPath = "configs/default.json";
         bool checkGrad = false;
         bool dumpFlux = false;
-        bool computeWoS = false;
         std::string boltInitFile;
         std::string surfaceFile;
-        std::string wosOutputDir = "data_wos";
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             if (arg == "--config" && i + 1 < argc) configPath = argv[++i];
             else if (arg == "--check-grad") checkGrad = true;
             else if (arg == "--dump-flux") dumpFlux = true;
-            else if (arg == "--compute-wos") computeWoS = true;
-            else if (arg == "--wos-output" && i + 1 < argc) wosOutputDir = argv[++i];
             else if (arg == "--bolt-file" && i + 1 < argc) boltInitFile = argv[++i];
             else if (arg == "--surface-file" && i + 1 < argc) surfaceFile = argv[++i];
             else if (arg[0] != '-') configPath = arg; // positional arg fallback
@@ -325,13 +321,7 @@ int main(int argc, char *argv[]) {
             return 0;
         }
 
-        // WoS influence computation mode
-        if (computeWoS) {
-            fmt::print("=== WoS Influence Computation Mode ===\n");
-            bezier::BezierPipeline pipeline(app, cfg);
-            pipeline.computeWoSInfluence(wosOutputDir);
-            return 0;
-        }
+        // WoS influence computation mode removed (route rejected at G1 gate, 2026-08)
 
         bezier::BezierPipeline pipeline(app, cfg);
         fs::create_directories(cfg.outputDir);

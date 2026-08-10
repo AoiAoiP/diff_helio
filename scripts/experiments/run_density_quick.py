@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Quick density scan: North-only, 50 iter, all 4 layouts."""
+"""Quick density scan: North-only, 50 iter, all 4 layouts.
+
+NOTE (2026-08-10 cleanup): 一次性实验脚本，仅供溯源。ROOT 硬编码指向已删除的
+worktree 路径，直接运行会报错；如需复跑请修正 ROOT 并确认数据目录存在。"""
 import json, os, subprocess, sys
 from pathlib import Path
 

@@ -30,7 +30,7 @@ python scripts/generate_proxy_model.py all-ansys
 python scripts/generate_proxy_model.py all --bolt-layout configs/bolt_layouts/6x6.json
 ```
 
-> **已废弃**：`scripts/prepare_data.py`、`scripts/generate_tps_influence.py` 已被 `generate_proxy_model.py` 替代，保留为薄封装层。
+> **已删除（2026-08-10 清理）**：`scripts/prepare_data.py`、`scripts/generate_tps_influence.py` 薄封装已移除，请直接用 `generate_proxy_model.py`；`scripts/ansys_gravity.py` 功能已 inline（`all-ansys` 子命令），原脚本归档于 `scripts/experiments/`。
 
 输出至 `data_proxy/`（默认）：`influence_phi.bin`、`influence_phi_u/v.bin`、`gravity_{angle}deg.bin`（20 个角度）、`gravity_angles.json`、`gravity_y.bin`。
 
@@ -50,7 +50,7 @@ python scripts/generate_sundir_year.py --mode dense
 python scripts/generate_sundir_year.py --lat 37.36 --lon 97.29 --tz Asia/Shanghai
 ```
 
-**设计原则**（详见 `sundir_sample/analysis_and_recommendations.md`）：
+**设计原则**（详见 `docs/sundir_analysis_and_recommendations.md`）：
 - 以**真太阳正午**（azimuth=180°）为基准对称采样——消除均时差（EoT）导致的上午/下午不对称
 - 12 个月月度覆盖——日期维度已饱和（论文结论）
 - 日内 1h 间隔（13 时点）——比旧脚本 2h 间隔加密一倍
@@ -63,9 +63,9 @@ python scripts/generate_sundir_year.py --lat 37.36 --lon 97.29 --tz Asia/Shangha
 | **日常优化（全方向）** | `data/334_sundir_balanced.txt` | 334 | ~50 min |
 | 最终生产运行 | 同上 balanced 模式 | 334 | ~50 min |
 
-> 东西侧镜面对训练集大小更敏感：36dir 过拟合达 +1.7 m²，110dir 降至 +0.4 m²，334dir 基本消除。详见 `sundir_sample/EXPERIMENT_REPORT_EAST_WEST.md`。
+> 东西侧镜面对训练集大小更敏感：36dir 过拟合达 +1.7 m²，110dir 降至 +0.4 m²，334dir 基本消除。详见 `docs/sundir_experiment_report_east_west.md`。
 
-> **已废弃**：`sundir_sample/DE_sundir_year.py`（平太阳时 + 2h 间隔）和 `data/738_sundir_year.txt` 已被新脚本替代，保留仅用于历史参考。旧脚本使用平太阳时（仅经度修正）而非真太阳时，存在 ±15 min 的不对称偏差。
+> **已废弃**：`sundir_sample/DE_sundir_year.py`（平太阳时 + 2h 间隔，已删除）和 `data/738_sundir_year.txt` 已被新脚本替代，保留仅用于历史参考。旧脚本使用平太阳时（仅经度修正）而非真太阳时，存在 ±15 min 的不对称偏差。
 
 ### 运行优化
 
@@ -101,8 +101,8 @@ done
 cmake --build build --config Release
 
 # 4. 评估 LS 和 Opt 螺栓的年均 S95（334 方向）
-./build/src/Release/bezier_opt.exe configs/_eval_lsq.json   # → results_lsq_eval/
-./build/src/Release/bezier_opt.exe configs/_eval_opt.json   # → results_opt_eval/
+./build/src/Release/bezier_opt.exe configs/archive/_eval_lsq.json   # → results_lsq_eval/
+./build/src/Release/bezier_opt.exe configs/archive/_eval_opt.json   # → results_opt_eval/
 
 # 5. 对比汇总
 python scripts/compare_lsq_vs_opt.py \
@@ -164,7 +164,7 @@ East    49.00   67.17  167.60  295.33  383.96
 South   52.06   72.24  188.56  312.81  393.37
 West    48.92   67.33  167.41  294.88  383.71
 ```
-生成方式：`disable_gravity: 1` + LS 螺栓 init + 1 iter 334-dir 评估（configs/_eval_ellipse_nograv.json）。注：North_300m=51.61 m²，非参考值 43.6（可能与 sunshape/光学参数差异有关）。
+生成方式：`disable_gravity: 1` + LS 螺栓 init + 1 iter 334-dir 评估（configs/archive/_eval_ellipse_nograv.json）。注：North_300m=51.61 m²，非参考值 43.6（可能与 sunshape/光学参数差异有关）。
 
 ### 其他运行模式
 
@@ -244,9 +244,9 @@ boltForwardSurface (力学正向) → forwardRender (光追) → computeS95FindL
 - **A2 编译期特化**：`renderForwardTyped<let SUNSHAPE_TYPE>` / `renderBackwardBoltTyped` 由 Slang 常量折叠；C++ 建 3 条管线按 `m_cfg.sunType` 分派（`m_pipeForwardTyped[3]` / `m_pipeBoltBackwardTyped[3]`）。通用入口 `renderForward` / `renderBackwardBolt` 保留编译但运行时不使用。
 - **L3 逐迭代种子**（`randomize_seed`，默认 OFF）：ON 时 `sunp[10] = m_currentIteration + 1`，`generateGaussianSamples` 混入逐迭代种子；OFF（=0.0）回退 `kSamplingSeed` 固定流（位精确旧行为）。
 - **L4 tanh 有界参数化**（始终启用）：Adam 在 ε 空间更新，`h = h_max·tanh(ε)`（`max_bolt_stroke` 默认 0.040 m）。每迭代从物理 h 经 `atanh(clamp(h/h_max, ±0.999))` 恢复 ε，链式因子 `dh/dε = h_max(1−tanh²ε)`，lr 补偿 `lr_ε = lr/h_max`（零点附近与旧直接参数化步长一致）。`stroke_regularization` > 0 时加 2λ·h·dh/dε 梯度。**行为变化**：iter 0 与旧代码位精确一致，iter ≥1 轨迹按设计偏离；逐位复现历史结果需回退 `26f1d2e`。
-- **A3 reflection-only**：已停用。配置项仍解析（`reflection_only_optimization`）但光路固定全折射（`pipeline.cpp` `helio[7]=0.0f // always refraction`）。
+- **A3 reflection-only**：已停用并于 2026-08-10 清理中移除配置项；光路固定全折射（`pipeline.cpp` `helio[7]=0.0f // always refraction`）。
 
-新增/变更配置键：`ray_cull`(1)、`ray_cull_margin_mrad`(8.0)、`lambda_energy`(0.0)、`max_bolt_stroke`(0.040)、`stroke_regularization`(0.0)、`randomize_seed`(0)、`reflection_only_optimization`(0，停用)。
+新增/变更配置键：`ray_cull`(1)、`ray_cull_margin_mrad`(8.0)、`lambda_energy`(0.0)、`max_bolt_stroke`(0.040)、`stroke_regularization`(0.0)、`randomize_seed`(0)。（`reflection_only_optimization` 已于 2026-08-10 移除；`geometry_sample_grid` 与 `proxy_mode` 同批移除。）
 
 ### 🔴 重力法向耦合修复（2026-07-27, Phase 1）
 
@@ -343,7 +343,7 @@ x = (u - 0.5) * W                      # 匹配 shader: gridToPlate(gridU, gridV
 将重力 bin 从 5 个加密到 **20 个**（10°/14°/18°/22°/26°/30°/34°/38°/42°/46°/50°/54°/58°/62°/66°/70°/73°/76°/78°/80°），间距 ≤4° 使得线性插值残余可忽略。
 
 生成方式：
-- **从 ANSYS MAPDL 批量仿真**：`python scripts/ansys_gravity.py` 自动对每个角度运行 NLGEOM-ON 静力学仿真，输出 7 列 CSV
+- **从 ANSYS MAPDL 批量仿真**：`python scripts/generate_proxy_model.py all-ansys`（原 `scripts/ansys_gravity.py`，已归档 `scripts/experiments/`）自动对每个角度运行 NLGEOM-ON 静力学仿真，输出 7 列 CSV
 - **CSV → .bin 转换**：`python scripts/generate_proxy_model.py gravity` 从 CSV 中提取 plate-normal 位移 `w = uy·cosθ + uz·sinθ`（匹配 GUI 约定：板法向 = (0, cosθ, +sinθ)），插值到 pixel-centered 32×32 网格
 
 **坐标系约定**（2026-07-17 修正）：所有 APDL 脚本统一使用 GUI 约定：
@@ -424,9 +424,9 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `validation/post_fea_validation/summary_table.md` | APDL vs GUI vs Proxy 三路验证汇总（2026-07-21） |
 | `docs/progress_2026-07-21.md` | **POD-Linear 代理模型原型实现与验证**（方案 E），含 100 FEA 快照、K=51 POD 模型、6 次优化 lr 扫描（2026-07-21） |
 | `docs/plate_proxy_replacement_research.md` | TPS 代理替代方案调研 + §7 POD-Linear 实验报告（2026-07-21） |
-| `sundir_sample/analysis_and_recommendations.md` | **太阳方向采样策略分析** — 论文结论 vs 本项目需求、真太阳时对称采样设计（2026-07-22） |
-| `sundir_sample/EXPERIMENT_REPORT.md` | **North 300m sundir 对比实验** — 36/110/334dir 验证 S95 几乎一致（<0.03%），东西侧需更密采样（2026-07-22） |
-| `sundir_sample/EXPERIMENT_REPORT_EAST_WEST.md` | **东西侧 sundir 对比实验** — 东西侧过拟合达北侧 4–5 倍，110dir 为最低可行训练集（2026-07-22） |
+| `docs/sundir_analysis_and_recommendations.md` | **太阳方向采样策略分析** — 论文结论 vs 本项目需求、真太阳时对称采样设计（2026-07-22） |
+| `docs/sundir_experiment_report.md` | **North 300m sundir 对比实验** — 36/110/334dir 验证 S95 几乎一致（<0.03%），东西侧需更密采样（2026-07-22） |
+| `docs/sundir_experiment_report_east_west.md` | **东西侧 sundir 对比实验** — 东西侧过拟合达北侧 4–5 倍，110dir 为最低可行训练集（2026-07-22） |
 | `analysis/` | 历史分析文档 |
 
 ### 最新四面镜结果（2026-07-17, data_proxy 修正后）
@@ -477,7 +477,7 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 - `data/lsq_vs_opt_334d.csv` — 完整对比表
 - `data/init/lsq_fit_summary.csv` — LS 拟合质量汇总
 - `configs/bolt_optimize_{900m,1200m}_lam*.json` — λ 扫描配置
-- `configs/_eval_ellipse_nograv.json` — 纯椭圆面无重力评估
+- `configs/archive/_eval_ellipse_nograv.json` — 纯椭圆面无重力评估
 
 **全 20 面镜子三路 S95 对比（334 方向年均，单位 m²）**：
 
@@ -539,6 +539,15 @@ python scripts/post_fea_validation.py --stroke-file ... --dry-run
 - **Phase 5 已独立成册**：结构层优化（布局扫描 / 材料替换 / ROM 重力 provider）见 `docs/phase5_structural_optimization.md`。G5 端到端验证 + FEA 抽查批 (a) 真值复跑已在台式机完成（m\*=0.04 真值口径确认，2026-07-31；工作主机已迁移至台式机 `L:\Code\bezier_opt_desktop`）。
 
 ---
+
+## 仓库清理记录（2026-08-10，cleanup/paper-prep 分支）
+
+- **数据**：一次性实验数据按实验线打包至仓库外 `L:/Code/_archive_bezier_paper_prep/`（phase6_pos 212M / phase5_margin 20M / phase5_sparse 43M / rom_retired 4.3M / material_steel 3.0M / lit_baseline 647K / phase4_bounds 1.2M / phase5_gates 2.3M / logs 84K）；调试残留（results_litdbg_*、results_g2b_*、results_a3_smoke、results_a4/*_dump、旧 Bezier results/、results_probe_nograv_pillbox）已直删。
+- **配置**：98 个 `_*.json` 一次性配置 → `configs/archive/`；正式配置 23 个保留原位。
+- **脚本**：废弃薄封装（prepare_data / generate_tps_influence / train_residual）已删；11 个一次性实验脚本 → `scripts/experiments/`；纯 Python 旧管线 → `archive/python_pipeline_legacy/`。
+- **死码**：WoS 路线（computeWoSInfluence + wos_*.slang + --compute-wos）、loss_gpu.slang（无调用点）、countS95Simple、失效配置键（reflection_only_optimization / geometry_sample_grid / proxy_mode POD）已移除；**Bezier 模式代码保留**。重编译通过，`--check-grad` 结果与文档记录的既有 FD 伪差一致（cos≈0.965，ratio≈0.35）。
+- **sundir_sample/**：3 个报告移入 `docs/`（sundir_*.md），目录删除。
+- **CTE 补充实验约定**（待做）：热膨胀系数实验数据放 `data_proxy_steel/`（重建）或新建 `data_proxy_thermal/`，布局配置放 `configs/bolt_layouts/`。
 
 ## 开放问题
 

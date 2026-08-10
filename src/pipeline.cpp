@@ -57,9 +57,6 @@ BezierPipeline::~BezierPipeline() {
     destroyPipeNoLayout(m_pipeBackward);
     destroyPipeNoLayout(m_pipeBackwardReduce);
     destroyPipeNoLayout(m_pipeLoss);
-    destroyPipeNoLayout(m_pipeCount);
-    destroyPipeNoLayout(m_pipeLossPartial);
-    destroyPipeNoLayout(m_pipeLossFinal);
     destroyPipeNoLayout(m_pipeAdam);
     destroyPipeNoLayout(m_pipeClearFluxGrad);
 
@@ -91,9 +88,6 @@ void BezierPipeline::loadShaders() {
     m_spvBackward = loadSpv("renderBackward");
     m_spvBackwardReduce = loadSpv("reduceBackwardGradients");
     m_spvLoss     = loadSpv("computeS95Loss");
-    m_spvCount    = loadSpv("countS95Simple");
-    m_spvLossPartial = loadSpv("reduceLossPartial");
-    m_spvLossFinal   = loadSpv("reduceLossFinal");
     m_spvAdam     = loadSpv("adamUpdate");
     m_spvClearFluxGrad = loadSpv("clearFluxGradient");
 }
@@ -210,9 +204,6 @@ void BezierPipeline::createPipelines() {
     m_pipeBackward = createPipe(m_spvBackward, "main", 0);
     m_pipeBackwardReduce = createPipe(m_spvBackwardReduce, "main", 0);
     m_pipeLoss     = createPipe(m_spvLoss,     "main", sizeof(float));
-    m_pipeCount    = createPipe(m_spvCount,    "main", sizeof(float));
-    m_pipeLossPartial = createPipe(m_spvLossPartial, "main", sizeof(float));
-    m_pipeLossFinal   = createPipe(m_spvLossFinal,   "main", 0);
     m_pipeAdam     = createPipe(m_spvAdam,     "main", sizeof(float) * 5);
     m_pipeClearFluxGrad = createPipe(m_spvClearFluxGrad, "main", 0);
 
@@ -560,13 +551,8 @@ void BezierPipeline::createBoltBuffers() {
                    20, gridPts, 20 * 3 * gridPts);
     }
 
-    // Load influence data from binary files (TPS or POD-Linear: same .bin format)
-    {
-        const char *modeStr = "TPS";
-        if (m_cfg.proxyMode == ProxyMode::POD_LINEAR) modeStr = "POD-Linear";
-        else if (m_cfg.proxyMode == ProxyMode::POD_MLP) modeStr = "POD-MLP";
-        fmt::print("  Loading {} proxy data from {}/\n", modeStr, m_cfg.influenceDataPath);
-    }
+    // Load influence data from binary files (TPS proxy)
+    fmt::print("  Loading TPS proxy data from {}/\n", m_cfg.influenceDataPath);
 
     size_t infSize = n * gridPts * sizeof(float);
     auto loadBin = [&](const std::string &fname, GpuBuffer &buf) -> bool {
@@ -1131,199 +1117,6 @@ void BezierPipeline::cpAdamStep(uint32_t iteration) {
     }
 }
 
-// ── WoS influence function computation ──────────────────────────────────
-
-void BezierPipeline::computeWoSInfluence(const std::string &outputDir) {
-    fmt::print("=== WoS Influence Computation ===\n");
-    const uint32_t TEX_W = 256, TEX_H = 192, N_BOLTS = 35, N_WALKS = 5000;
-    const size_t totalPixels = TEX_W * TEX_H * N_BOLTS;
-
-    // Load WoS SPIR-V and create independent pipeline
-    auto spvWoS = loadSpv("computeWoSInfluence");
-    ComputePipeline pipeWoS;
-    VkShaderModule sm = VK_NULL_HANDLE;
-
-    // Create descriptor set layout: binding 0 = bolt positions, binding 1 = output
-    std::array<VkDescriptorSetLayoutBinding, 2> wosBindings = {{
-        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-    }};
-    VkDescriptorSetLayoutCreateInfo dslCI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dslCI.bindingCount = (uint32_t)wosBindings.size();
-    dslCI.pBindings = wosBindings.data();
-    VkResult vr = vkCreateDescriptorSetLayout(m_app.device(), &dslCI, nullptr, &pipeWoS.setLayout);
-    if (vr != VK_SUCCESS) throw std::runtime_error(fmt::format("WoS descriptor set layout: {}", (int)vr));
-
-    // Pipeline layout
-    VkPushConstantRange pcr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};  // WoS_PC = 4 floats
-    VkPipelineLayoutCreateInfo layoutCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    layoutCI.setLayoutCount = 1;
-    layoutCI.pSetLayouts = &pipeWoS.setLayout;
-    layoutCI.pushConstantRangeCount = 1;
-    layoutCI.pPushConstantRanges = &pcr;
-    vr = vkCreatePipelineLayout(m_app.device(), &layoutCI, nullptr, &pipeWoS.layout);
-    if (vr != VK_SUCCESS) throw std::runtime_error(fmt::format("WoS pipeline layout: {}", (int)vr));
-
-    // Shader module
-    {
-        VkShaderModuleCreateInfo sinfo{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        sinfo.codeSize = spvWoS.size() * sizeof(uint32_t);
-        sinfo.pCode = spvWoS.data();
-        vr = vkCreateShaderModule(m_app.device(), &sinfo, nullptr, &sm);
-        if (vr != VK_SUCCESS) throw std::runtime_error(fmt::format("WoS shader module: {}", (int)vr));
-    }
-
-    // Compute pipeline
-    {
-        VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        ci.stage.module = sm;
-        ci.stage.pName = "main";
-        ci.layout = pipeWoS.layout;
-        vr = vkCreateComputePipelines(m_app.device(), VK_NULL_HANDLE, 1, &ci, nullptr, &pipeWoS.pipeline);
-        if (vr != VK_SUCCESS) throw std::runtime_error(fmt::format("WoS pipeline: {} — check shader entry point name matches SPIR-V", (int)vr));
-    }
-
-    // Bolt positions buffer
-    float margin = m_cfg.boltMargin;
-    uint32_t nbolts_x = m_cfg.numBoltsX;
-    uint32_t nbolts_z = m_cfg.numBoltsZ;
-    uint32_t nb = m_cfg.numBolts;
-    std::vector<float> boltPos(nb * 2);
-    for (uint32_t j = 0; j < nbolts_z; j++) {
-        float v = margin + (1.f - 2.f*margin) * j / float(nbolts_z - 1);
-        for (uint32_t i = 0; i < nbolts_x; i++) {
-            float u = margin + (1.f - 2.f*margin) * i / float(nbolts_x - 1);
-            uint32_t idx = j * nbolts_x + i;
-            boltPos[idx*2]   = (u - 0.5f) * m_cfg.heliostatWidth;
-            boltPos[idx*2+1] = (v - 0.5f) * m_cfg.heliostatLength;
-        }
-    }
-    auto boltBuf = m_app.createBuffer(boltPos.size() * sizeof(float),
-                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-    m_app.uploadBuffer(boltBuf, boltPos.data(), boltPos.size() * sizeof(float));
-
-    // Output influence buffer
-    auto outBuf = m_app.createBuffer(totalPixels * sizeof(float),
-                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-
-    // Descriptor set
-    VkDescriptorSetLayout setLayout = pipeWoS.setLayout;
-    VkDescriptorSet descSet = VK_NULL_HANDLE;
-    {
-        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        ai.descriptorPool = m_app.descriptorPool();
-        ai.descriptorSetCount = 1;
-        ai.pSetLayouts = &setLayout;
-        VkResult vr = vkAllocateDescriptorSets(m_app.device(), &ai, &descSet);
-        if (vr != VK_SUCCESS || descSet == VK_NULL_HANDLE)
-            throw std::runtime_error(fmt::format("WoS desc set alloc: {}", (int)vr));
-    }
-    {
-        VkDescriptorBufferInfo boltInfo{boltBuf.buffer, 0, boltBuf.size};
-        VkDescriptorBufferInfo outInfo{outBuf.buffer, 0, outBuf.size};
-        VkWriteDescriptorSet writes[2] = {
-            {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descSet, 0, 0, 1,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &boltInfo, nullptr},
-            {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descSet, 1, 0, 1,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &outInfo, nullptr},
-        };
-        vkUpdateDescriptorSets(m_app.device(), 2, writes, 0, nullptr);
-    }
-
-    // Push constants
-    float D_plate = 7e10f * std::pow(0.004f, 3) / (12.f * (1.f - 0.22f * 0.22f));
-    struct { float W, L, D, nu; } pc = {m_cfg.heliostatWidth, m_cfg.heliostatLength, D_plate, 0.22f};
-
-    // Dispatch
-    uint32_t totalThreads = uint32_t(totalPixels);
-    uint32_t groupCount = (totalThreads + 255) / 256;
-
-    fmt::print("  Texture: {}x{} x {} bolts = {} pixels\n", TEX_W, TEX_H, N_BOLTS, totalPixels);
-    fmt::print("  Walks per pixel: {}\n", N_WALKS);
-    fmt::print("  Groups: {}, Threads: {}\n", groupCount, totalThreads);
-    fmt::print("  Expected GPU time: ~2 min\n");
-    fflush(stdout);
-
-    fmt::print("  DEBUG: pipeline={} layout={} descSet={}\n",
-               (void*)pipeWoS.pipeline, (void*)pipeWoS.layout, (void*)descSet);
-    fflush(stdout);
-
-    auto t0 = std::chrono::steady_clock::now();
-    fmt::print("  DEBUG: beginComputePass...\n"); fflush(stdout);
-    auto pass = m_app.beginComputePass();
-    fmt::print("  DEBUG: got pass cmd={}\n", (void*)pass.cmd); fflush(stdout);
-
-    vkCmdBindPipeline(pass.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeWoS.pipeline);
-    fmt::print("  DEBUG: bindPipeline done\n"); fflush(stdout);
-
-    vkCmdBindDescriptorSets(pass.cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            pipeWoS.layout, 0, 1, &descSet, 0, nullptr);
-    fmt::print("  DEBUG: bindDescSets done\n"); fflush(stdout);
-
-    vkCmdPushConstants(pass.cmd, pipeWoS.layout, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(pc), &pc);
-    fmt::print("  DEBUG: pushConstants done\n"); fflush(stdout);
-
-    vkCmdDispatch(pass.cmd, groupCount, 1, 1);
-    fmt::print("  DEBUG: dispatch done\n"); fflush(stdout);
-
-    m_app.endComputePass(pass);
-    fmt::print("  DEBUG: endComputePass done\n"); fflush(stdout);
-    vkDeviceWaitIdle(m_app.device());
-    auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    fmt::print("  GPU time: {:.1f}s\n", elapsed);
-
-    // Read back and save as .bin files
-    std::vector<float> outData(totalPixels);
-    m_app.downloadBuffer(outBuf, outData.data(), totalPixels * sizeof(float));
-
-    // Compute phi_u, phi_v via finite differences
-    auto computeDerivs = [&](std::vector<float> &u, std::vector<float> &v) {
-        u.resize(totalPixels); v.resize(totalPixels);
-        float du = 1.f / (TEX_W - 1), dv = 1.f / (TEX_H - 1);
-        for (uint32_t b = 0; b < N_BOLTS; b++) {
-            size_t bOff = b * TEX_W * TEX_H;
-            for (uint32_t y = 0; y < TEX_H; y++) {
-                for (uint32_t x = 0; x < TEX_W; x++) {
-                    size_t idx = bOff + y * TEX_W + x;
-                    uint32_t xp1 = (x+1 < TEX_W) ? x+1 : x;
-                    uint32_t xm1 = (x > 0) ? x-1 : x;
-                    uint32_t yp1 = (y+1 < TEX_H) ? y+1 : y;
-                    uint32_t ym1 = (y > 0) ? y-1 : y;
-                    float f_xp1 = outData[bOff + y*TEX_W + xp1];
-                    float f_xm1 = outData[bOff + y*TEX_W + xm1];
-                    float f_yp1 = outData[bOff + yp1*TEX_W + x];
-                    float f_ym1 = outData[bOff + ym1*TEX_W + x];
-                    u[idx] = (f_xp1 - f_xm1) / (2.f * du);
-                    v[idx] = (f_yp1 - f_ym1) / (2.f * dv);
-                }
-            }
-        }
-    };
-    std::vector<float> phiU, phiV;
-    computeDerivs(phiU, phiV);
-
-    // Save raw high-res .bin files
-    auto saveBin = [&](const std::string &name, const std::vector<float> &d) {
-        std::ofstream f(outputDir + "/" + name, std::ios::binary);
-        f.write((const char*)d.data(), d.size() * sizeof(float));
-    };
-    fs::create_directories(outputDir);
-    saveBin("influence_phi.bin", outData);
-    saveBin("influence_phi_u.bin", phiU);
-    saveBin("influence_phi_v.bin", phiV);
-    fmt::print("  Saved: {}/influence_phi*.bin ({}x{} x {} bolts, {} MB)\n",
-               outputDir, TEX_W, TEX_H, N_BOLTS, outData.size()*4/1024/1024);
-
-    // Cleanup
-    vkDestroyShaderModule(m_app.device(), sm, nullptr);
-    vkDestroyPipeline(m_app.device(), pipeWoS.pipeline, nullptr);
-    vkDestroyPipelineLayout(m_app.device(), pipeWoS.layout, nullptr);
-    vkDestroyDescriptorSetLayout(m_app.device(), pipeWoS.setLayout, nullptr);
-}
-
 // A2: pack SunParams UBO contents (13 floats, layout matching binding 2)
 void BezierPipeline::fillSunParams(const std::array<float, 3> &sd, float *sunp) const {
     // Layout: dir(3), dni(1), shapeParams(4), shapeIntegral(1), type(1), _pad(3)
@@ -1511,44 +1304,11 @@ float BezierPipeline::computeS95Loss(float s95Level) {
     return loss;
 }
 
-float BezierPipeline::computeLossGPU(float s95Level) {
-    // Stage 1: per-group partial reduction
-    {
-        auto pass = m_app.beginComputePass();
-        m_app.bindPipeline(pass.cmd, m_pipeLossPartial);
-        m_app.pushConstants(pass.cmd, m_pipeLossPartial.layout, &s95Level, sizeof(float));
-        uint32_t totalPixels = m_cfg.pixelWidth * m_cfg.pixelHeight;
-        uint32_t nGroups = (totalPixels + 255) / 256;
-        m_app.dispatch(pass.cmd, nGroups, 1, 1);
-        m_app.pipelineBarrier(pass.cmd);
-        // Stage 2: final reduction
-        m_app.bindPipeline(pass.cmd, m_pipeLossFinal);
-        m_app.dispatch(pass.cmd, 1, 1, 1);
-        m_app.endComputePass(pass);
-    }
-    float loss = 0.0f;
-    m_app.downloadBuffer(m_s95CountBuf, &loss, sizeof(float));
-    return loss;
-}
-
 void BezierPipeline::clearFluxGradient() {
     auto pass = m_app.beginComputePass();
     m_app.bindPipeline(pass.cmd, m_pipeClearFluxGrad);
     m_app.dispatch(pass.cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
     m_app.endComputePass(pass);
-}
-
-uint32_t BezierPipeline::countS95PixelsGPU(float s95Level) {
-    uint32_t zero = 0;
-    m_app.uploadBuffer(m_s95CountBuf, &zero, sizeof(uint32_t));
-    auto pass = m_app.beginComputePass();
-    m_app.bindPipeline(pass.cmd, m_pipeCount);
-    m_app.pushConstants(pass.cmd, m_pipeCount.layout, &s95Level, sizeof(float));
-    m_app.dispatch(pass.cmd, (m_cfg.pixelWidth + 15) / 16, (m_cfg.pixelHeight + 15) / 16, 1);
-    m_app.endComputePass(pass);
-    uint32_t count = 0;
-    m_app.downloadBuffer(m_s95CountBuf, &count, sizeof(uint32_t));
-    return count;
 }
 
 void BezierPipeline::backwardPass() {
@@ -1605,12 +1365,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         float dist = std::sqrt(hc.position[0] * hc.position[0] + hc.position[1] * hc.position[1] +
                                hc.position[2] * hc.position[2]);
         fmt::print("Optimizing (BOLT mode, {} bolts): {} (dist={:.1f}m)\n", m_cfg.numBolts, hc.name, dist);
-        {
-            const char *modeStr = "TPS";
-            if (m_cfg.proxyMode == ProxyMode::POD_LINEAR) modeStr = "POD-Linear";
-            else if (m_cfg.proxyMode == ProxyMode::POD_MLP) modeStr = "POD-MLP";
-            fmt::print("  Proxy model: {}  (data: {})\n", modeStr, m_cfg.influenceDataPath);
-        }
+        fmt::print("  Proxy model: TPS  (data: {})\n", m_cfg.influenceDataPath);
         fflush(stdout);
 
         // Resolve bolt init file: override > config > "auto" (by heliostat name + distance) > zero

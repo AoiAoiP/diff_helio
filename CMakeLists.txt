@@ -54,15 +54,12 @@ set(SHADER_SOURCES
     ${SHADER_DIR}/forward.slang
     ${SHADER_DIR}/backward.slang
     ${SHADER_DIR}/loss.slang
-    ${SHADER_DIR}/loss_gpu.slang
     ${SHADER_DIR}/optimizer.slang
     ${SHADER_DIR}/bolt_common.slang
     ${SHADER_DIR}/bolt_forward.slang
     ${SHADER_DIR}/bolt_backward.slang
     ${SHADER_DIR}/bolt_optimizer.slang
     ${SHADER_DIR}/s95_gpu.slang
-    ${SHADER_DIR}/wos_common.slang
-    ${SHADER_DIR}/wos_influence.slang
 )
 
 # Entry points: name -> source file
@@ -77,10 +74,7 @@ set(SHADER_ENTRIES
     "renderBackward:backward.slang"
     "reduceBackwardGradients:backward.slang"
     "computeS95Loss:loss.slang"
-    "countS95Simple:loss.slang"
     "clearFluxGradient:loss.slang"
-    "reduceLossPartial:loss_gpu.slang"
-    "reduceLossFinal:loss_gpu.slang"
     "adamUpdate:optimizer.slang"
     "computeBoltSurface:bolt_forward.slang"
     "renderBackwardBolt:bolt_backward.slang"
@@ -93,7 +87,6 @@ set(SHADER_ENTRIES
     "adamUpdateBolt:bolt_optimizer.slang"
     "computeS95FindLevel:s95_gpu.slang"
     "computeS95LossBUF:s95_gpu.slang"
-    "computeWoSInfluence:wos_influence.slang"
 )
 
 # Compile each entry point to SPIR-V

@@ -36,14 +36,3 @@ void clearFluxGradient(uint3 tid : SV_DispatchThreadID) {
     if (tid.x >= dims.x || tid.y >= dims.y) return;
     fluxGradient[tid.xy] = 0.0f;
 }
-
-// Count pixels above S95 level using atomic counter (uint32, no float atomics needed)
-[shader("compute")]
-[numthreads(16, 16, 1)]
-void countS95Simple(uint3 tid:SV_DispatchThreadID){
-    uint2 dims=getReceiverDims();
-    if(tid.x>=dims.x||tid.y>=dims.y) return;
-    if(renderedFlux[tid.xy] >= pushConst.s95Level) {
-        InterlockedAdd(s95CountBuf[0], 1u);
-    }
-}

@@ -8,7 +8,6 @@
 namespace bezier {
 
 enum class SunShapeType : uint32_t { BUIE = 0, PILLBOX = 1, GAUSSIAN = 2 };
-enum class ProxyMode : uint32_t { TPS = 0, POD_LINEAR = 1, POD_MLP = 2 };
 
 struct Config {
     // Files
@@ -60,9 +59,6 @@ struct Config {
     uint32_t randomSeed = 12345;
     uint32_t samplePoolPow = 25;  // 2^25 = 33,554,432 floats
 
-    // Physics-informed loss terms (all disabled by default)
-    uint32_t geometrySampleGrid = 20;
-
     // Bolt parameterization (bolt mode replaces Bezier CP with bolt heights)
     bool useBoltParameterization = false;
     uint32_t numBolts = 35;
@@ -74,7 +70,6 @@ struct Config {
     // P1: gravity normal coupling — derivatives enter surface normal (0=legacy phantom)
     bool gravityNormalCoupling = true;
     std::string influenceDataPath = "data_proxy";
-    ProxyMode proxyMode = ProxyMode::TPS;
 
     // B-spline dimensionality reduction (25 CPs -> 35 bolts)
     bool useBSpline = false;
@@ -90,8 +85,6 @@ struct Config {
     float maxBoltStroke = 0.040f;
     // P1-L4: stroke regularization weight (0 = disabled)
     float strokeRegularization = 0.0f;
-    // P1-A3: use reflection-only optics for ablation study (default false = full optics)
-    bool reflectionOnlyOptimization = false;
     // P1-L3: per-iteration seed randomization (0 = fixed seed, 1 = randomize)
     bool randomizeSeed = false;
 

@@ -113,7 +113,6 @@ Config loadConfig(const std::string &path) {
     cfg.patience = extractInt(json, "patience", cfg.patience);
 
     cfg.enableMSELoss = extractInt(json, "enable_mse_loss", 0) != 0;
-    cfg.geometrySampleGrid = extractInt(json, "geometry_sample_grid", 20);
 
     cfg.useBoltParameterization = extractInt(json, "use_bolt", 0) != 0;
     cfg.numBolts = extractInt(json, "num_bolts", 35);
@@ -121,13 +120,6 @@ Config loadConfig(const std::string &path) {
     cfg.numBoltsZ = extractInt(json, "num_bolts_z", 5);
     cfg.boltMargin = extractFloat(json, "bolt_margin", 0.08f);
     cfg.influenceDataPath = extractString(json, "influence_data_path", "data_proxy");
-
-    {
-        std::string pm = extractString(json, "proxy_mode", "tps");
-        if (pm == "pod_linear") cfg.proxyMode = ProxyMode::POD_LINEAR;
-        else if (pm == "pod_mlp") cfg.proxyMode = ProxyMode::POD_MLP;
-        else cfg.proxyMode = ProxyMode::TPS;
-    }
 
     cfg.useBSpline = extractInt(json, "use_bspline", 0) != 0;
     cfg.numCpX = extractInt(json, "num_cp_x", 5);
@@ -139,7 +131,6 @@ Config loadConfig(const std::string &path) {
 
     cfg.maxBoltStroke = extractFloat(json, "max_bolt_stroke", 0.040f);
     cfg.strokeRegularization = extractFloat(json, "stroke_regularization", 0.0f);
-    cfg.reflectionOnlyOptimization = extractInt(json, "reflection_only_optimization", 0) != 0;
     cfg.randomizeSeed = extractInt(json, "randomize_seed", 0) != 0;
 
     cfg.rayCull = extractInt(json, "ray_cull", 1) != 0;
