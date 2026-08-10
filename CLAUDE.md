@@ -416,6 +416,8 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `docs/phase5_4_bolt_position_optimization.md` | **Phase 5.4 方案**：逐栓自由布局的端到端可微优化（B3 隐函数梯度 / Group LASSO 稀疏优化 / 子镜分面），含 G0–G5 门体系（2026-08-03） |
 | `docs/phase5_4_implementation_plan.md` | **Phase 5.4 实施设计**：代码考古/双轨架构/门判据与回退（2026-08-04）；执行进展见主报告 §3.10（2026-08-05 起，贪心稀疏证伪→边缘保护内剪） |
 | `docs/phase6_pos_height_joint.md` | **Phase 6 栓位×行程联合优化（已收口 2026-08-07）**：TPS 位置灵敏度（直接法，G0a 级验证）+ bold top-K 阶梯驱动；结论：网格选择>>位置微调（~1% 精修）、10×7 最优初值、无不对称涌现；含下一阶段启动提示词 |
+| `docs/bolt_position_optimization_stage_report.md` | **螺栓位置端到端优化阶段性报告（Phase 5.4+6 收口存档，2026-08-10）**：v3 强证伪 / G4 对照 / v4 弱成立 / A4 封顶 / Phase 6 四初值批；设计规则 5 条与重启判据；支线不进论文主线 |
+| `docs/steel_cte_experiment_guide.md` | **钢材热膨胀系数（CTE）补充实验行动指南（2026-08-10）**：T0 文献量级→T4 端到端五阶段门体系；层合板 CTE 失配热弯曲；热形变 bins 复用重力通路（路线 A 零代码改动）；含三条历史教训防坑清单 |
 | `docs/progress_2026-08-01.md` | **2026-08-01 进度总结**：v2 alpha 表细子步重标定 + 论文初稿填充（§3–§7），全部完成 |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
