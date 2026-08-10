@@ -60,3 +60,12 @@ phase4_experiment_results_*/
 data_rom/
 ref/
 rom_g5_results_*
+
+# Phase 5.4–6 large binary data (regenerable or local-only)
+data_pos/
+data_pos_bold/
+data_proxy_truth/
+data_proxy_g0b/
+data_proxy_g1p/
+data_rom_sparse/
+data_lit/

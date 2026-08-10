@@ -1,0 +1,15 @@
+{
+  "description": "Senior thesis Ch5 plate: 12.9 x 9.6 m, 7x5 bolts margin 8% (replication)",
+  "bolts_x": 7,
+  "bolts_z": 5,
+  "margin": 0.08,
+  "plate_width_m": 12.9,
+  "plate_length_m": 9.6,
+  "plate_thickness_m": 0.003,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

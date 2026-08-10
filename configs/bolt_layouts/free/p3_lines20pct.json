@@ -1,0 +1,28 @@
+{
+  "description": "G1' p3: 7x5 m05 line positions perturbed +/-20% spacing",
+  "positions_x": [
+    -5.7780000000000005,
+    -3.4668,
+    -2.3112000000000004,
+    0.3852,
+    1.5408000000000002,
+    4.2372000000000005,
+    5.7780000000000005
+  ],
+  "positions_z": [
+    -4.2524999999999995,
+    -1.7009999999999996,
+    -0.4252500000000001,
+    2.5515000000000008,
+    4.2525
+  ],
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.004,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

@@ -33,6 +33,9 @@ from scipy.interpolate import griddata
 
 ROOT = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import layout_utils
+
 # ── ANSYS executable (v252) ──
 ANSYS_EXE = "L:/Program Files/ANSYS Inc/v252/ansys/bin/winx64/ANSYS252.exe"
 
@@ -42,31 +45,17 @@ DEFAULT_ANGLES = [10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
 
 
 def load_bolt_layout(path):
-    """Load bolt layout configuration from JSON."""
-    with open(path) as f:
-        cfg = json.load(f)
-    required = ["bolts_x", "bolts_z", "margin", "plate_width_m", "plate_length_m",
-                "plate_thickness_m"]
-    for k in required:
-        if k not in cfg:
-            raise ValueError(f"Bolt layout config missing key: {k}")
-    return cfg
+    """Load bolt layout configuration from JSON (all three forms, Phase 5.4)."""
+    return layout_utils.load_layout(path)
 
 
 def bolt_positions(layout):
-    """Compute bolt (x,z) positions from layout config (row-major: z outer, x inner)."""
-    nx, nz = layout["bolts_x"], layout["bolts_z"]
-    m = layout["margin"]
-    W, L = layout["plate_width_m"], layout["plate_length_m"]
-    positions = []
-    for j in range(nz):
-        v = m + (1.0 - 2.0 * m) * j / (nz - 1)
-        for i in range(nx):
-            u = m + (1.0 - 2.0 * m) * i / (nx - 1)
-            x = (u - 0.5) * W
-            z = (v - 0.5) * L
-            positions.append((x, z))
-    return positions
+    """Compute bolt (x,z) positions from layout config (row-major: z outer, x inner).
+
+    Supports all three layout forms (grid / positions lines / free positions)
+    via layout_utils (Phase 5.4)."""
+    bx, bz = layout_utils.bolt_positions(layout)
+    return list(zip(bx.tolist(), bz.tolist()))
 
 
 def generate_apdl_input(layout, angle_deg, bolt_xy, output_file, work_dir,
@@ -321,7 +310,7 @@ def main():
     n_bolts = len(positions)
     print(f"=== ANSYS Gravity Bin Generator ===")
     print(f"  Layout:   {layout.get('description', args.bolt_layout)}")
-    print(f"  Bolts:    {layout['bolts_x']}x{layout['bolts_z']} = {n_bolts} bolts, margin={layout['margin']}")
+    print(f"  Bolts:    {layout_utils.layout_description(layout)}")
     print(f"  Plate:    {W}x{L}m, t={layout['plate_thickness_m']*1000}mm")
     print(f"  Grid:     {GS}x{GS}")
     print(f"  Angles:   {len(args.angles)} bins, {args.angles[0]}°–{args.angles[-1]}°")

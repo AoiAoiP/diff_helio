@@ -40,8 +40,13 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# ── Plate geometry (fixed physical dimensions) ──
-W, L = 12.84, 9.45  # plate width, length (m)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import layout_utils
+
+# ── Plate geometry (fixed physical dimensions; env override for literature
+# replication runs, e.g. BEZIER_PLATE_W=12.9 BEZIER_PLATE_L=9.6) ──
+W = float(os.environ.get("BEZIER_PLATE_W", "12.84"))
+L = float(os.environ.get("BEZIER_PLATE_L", "9.45"))
 
 # ── Default 20-bin gravity angles (matching shaders/bolt_common.slang kGravityAngles) ──
 DEFAULT_ANGLES_20BIN = [10, 14, 18, 22, 26, 30, 34, 38, 42, 46,
@@ -90,15 +95,22 @@ def compute_grid(grid_size=32):
 
 
 def generate_influence_data(output_dir='data_proxy', reg=1e-6, grid_size=32,
-                            bolts_x=7, bolts_z=5, margin=0.08):
-    """Generate TPS influence function .bin files. Returns partition-of-unity PV."""
+                            bolts_x=7, bolts_z=5, margin=0.08, bolt_xz=None):
+    """Generate TPS influence function .bin files. Returns partition-of-unity PV.
+
+    bolt_xz: optional (BX, BZ) coordinate arrays (plate-local, center-origin,
+    meters) for arbitrary layouts; when given, bolts_x/bolts_z/margin are
+    ignored for positioning (Phase 5.4)."""
     TPSSolver = _import_tps_solver()
     os.makedirs(output_dir, exist_ok=True)
 
     GS = grid_size
-    NB = bolts_x * bolts_z
     _, _, Xg, Zg = compute_grid(GS)
-    BX, BZ = compute_bolt_positions(bolts_x, bolts_z, margin)
+    if bolt_xz is not None:
+        BX, BZ = np.asarray(bolt_xz[0], dtype=float), np.asarray(bolt_xz[1], dtype=float)
+    else:
+        BX, BZ = compute_bolt_positions(bolts_x, bolts_z, margin)
+    NB = len(BX)
 
     print(f"Generating TPS influence functions...")
     print(f"  Plate: {W:.2f} x {L:.2f} m, Grid: {GS}x{GS}, Bolts: {NB} ({bolts_x}x{bolts_z})")
@@ -374,31 +386,17 @@ def precompute_gravity_bins(source_dir, output_dir, grid_size=32, angles=None,
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_bolt_layout(path):
-    """Load bolt layout configuration from JSON."""
-    with open(path) as f:
-        cfg = json.load(f)
-    required = ["bolts_x", "bolts_z", "margin", "plate_width_m", "plate_length_m",
-                "plate_thickness_m"]
-    for k in required:
-        if k not in cfg:
-            raise ValueError(f"Bolt layout config missing key: {k}")
-    return cfg
+    """Load bolt layout configuration from JSON (all three forms, Phase 5.4)."""
+    return layout_utils.load_layout(path)
 
 
 def bolt_positions_from_layout(layout):
-    """Compute bolt (x,z) positions from layout config (row-major: z outer, x inner)."""
-    nx, nz = layout["bolts_x"], layout["bolts_z"]
-    m = layout["margin"]
-    pW, pL = layout["plate_width_m"], layout["plate_length_m"]
-    positions = []
-    for j in range(nz):
-        v = m + (1.0 - 2.0 * m) * j / (nz - 1)
-        for i in range(nx):
-            u = m + (1.0 - 2.0 * m) * i / (nx - 1)
-            x = (u - 0.5) * pW
-            z = (v - 0.5) * pL
-            positions.append((x, z))
-    return positions
+    """Compute bolt (x,z) positions from layout config (row-major: z outer, x inner).
+
+    Supports all three layout forms (grid / positions lines / free positions)
+    via layout_utils (Phase 5.4)."""
+    bx, bz = layout_utils.bolt_positions(layout)
+    return list(zip(bx.tolist(), bz.tolist()))
 
 
 def generate_gravity_apdl(layout, angle_deg, bolt_xy, work_dir):
@@ -581,7 +579,7 @@ def run_ansys_gravity_bins(layout_path, output_dir, grid_size=32, angles=None,
 
     print(f"=== ANSYS Gravity Bin Generator ===")
     print(f"  Layout:   {layout.get('description', layout_path)}")
-    print(f"  Bolts:    {layout['bolts_x']}x{layout['bolts_z']} = {n_bolts}, margin={layout['margin']}")
+    print(f"  Bolts:    {layout_utils.layout_description(layout)}")
     print(f"  Plate:    {pW}x{pL}m, t={layout['plate_thickness_m']*1000}mm")
     print(f"  Grid:     {GS}x{GS}")
     print(f"  Angles:   {len(angles)} bins, {angles[0]}°–{angles[-1]}°")
@@ -703,22 +701,29 @@ def validate_output(output_dir, grid_size, bolts_x, bolts_z, gravity_angles):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _resolve_bolt_params(args):
-    """Resolve bolts_x, bolts_z, margin from either --bolt-layout JSON or explicit args."""
+    """Resolve (bolts_x, bolts_z, margin, bolt_xz) from --bolt-layout JSON or explicit args.
+
+    bolt_xz is None for the legacy uniform-grid path; for layouts with
+    positions_x/z or bolt_positions it carries the (BX, BZ) arrays (Phase 5.4).
+    """
     if args.bolt_layout:
         layout_path = ROOT / args.bolt_layout if not os.path.isabs(args.bolt_layout) else args.bolt_layout
         if not os.path.exists(layout_path):
             print(f"ERROR: Bolt layout not found: {layout_path}", file=sys.stderr)
             sys.exit(1)
-        with open(layout_path) as f:
-            lc = json.load(f)
-        return lc.get("bolts_x", 7), lc.get("bolts_z", 5), lc.get("margin", 0.08)
-    return args.bolts_x, args.bolts_z, args.margin
+        lc = layout_utils.load_layout(layout_path)
+        if layout_utils.layout_form(lc) != "grid":
+            bx, bz = layout_utils.bolt_positions(lc)
+            return lc.get("bolts_x", 7), lc.get("bolts_z", 5), lc.get("margin", 0.08), (bx, bz)
+        return lc.get("bolts_x", 7), lc.get("bolts_z", 5), lc.get("margin", 0.08), None
+    return args.bolts_x, args.bolts_z, args.margin, None
 
 
 def cmd_tps(args):
     """Handle 'tps' subcommand."""
-    bx, bz, margin = _resolve_bolt_params(args)
-    pu = generate_influence_data(args.output_dir, args.reg, args.grid_size, bx, bz, margin)
+    bx, bz, margin, bolt_xz = _resolve_bolt_params(args)
+    pu = generate_influence_data(args.output_dir, args.reg, args.grid_size,
+                                 bx, bz, margin, bolt_xz=bolt_xz)
     if pu < 1e-4:
         print(f"\nSUCCESS: Partition of unity PV = {pu:.2e} (< 1e-4)")
     else:
@@ -741,14 +746,15 @@ def cmd_gravity_ansys(args):
 
 def cmd_all(args):
     """Handle 'all' subcommand."""
-    bx, bz, margin = _resolve_bolt_params(args)
+    bx, bz, margin, bolt_xz = _resolve_bolt_params(args)
     out = args.output_dir
 
     # Step 1: TPS influence
     print(f"\n{'='*60}")
     print(f"Step 1/2: TPS Influence Functions")
     print(f"{'='*60}")
-    generate_influence_data(out, args.reg, args.grid_size, bx, bz, margin)
+    generate_influence_data(out, args.reg, args.grid_size, bx, bz, margin,
+                            bolt_xz=bolt_xz)
 
     # Step 2: Gravity
     print(f"\n{'='*60}")
@@ -768,7 +774,8 @@ def cmd_all(args):
     print(f"\n{'='*60}")
     print(f"Validation")
     print(f"{'='*60}")
-    validate_output(out, args.grid_size, bx, bz, args.gravity_angles)
+    nb = len(bolt_xz[0]) if bolt_xz is not None else bx * bz
+    validate_output(out, args.grid_size, nb, 1, args.gravity_angles)
 
     print(f"\n=== Data ready in {out} ===")
 

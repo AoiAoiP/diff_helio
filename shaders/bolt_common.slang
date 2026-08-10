@@ -5,7 +5,8 @@ module bolt_common;
 import common;
 
 // Bolt count constants
-public static const uint kMaxBolts  = 50u;
+// Raised 50 -> 128 for Phase 5.4 free-layout / dense-start (up to 99+ bolts).
+public static const uint kMaxBolts  = 128u;
 
 // ---- Bolt-mode buffer bindings (extend set 0 beyond Bezier's 0-16) ----
 // Binding 17: bolt heights (read-only during forward/backward, RW during adam)

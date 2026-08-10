@@ -17,11 +17,12 @@ import numpy as np
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PROXY = ROOT / 'data_proxy'
+DATA_PROXY = Path(os.environ.get("BEZIER_PROXY_DIR", str(ROOT / 'data_proxy')))
 
-# Plate dimensions (matching generate_proxy_model.py and shader conventions)
-W = 12.84   # width (x)
-L = 9.45    # length (z)
+# Plate dimensions (matching generate_proxy_model.py and shader conventions;
+# env override for literature replication runs)
+W = float(os.environ.get("BEZIER_PLATE_W", "12.84"))
+L = float(os.environ.get("BEZIER_PLATE_L", "9.45"))
 GS = 32     # grid size
 NB = 35     # number of bolts (7x5)
 BOLTS_X = 7

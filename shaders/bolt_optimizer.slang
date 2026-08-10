@@ -7,7 +7,7 @@
 // When tanhBound==0, skip atanh/tanh and do physical-space Adam directly.
 module bolt_optimizer;
 
-static const uint kMaxBolts = 50u;
+static const uint kMaxBolts = 128u;
 
 [[vk::binding(17)]] RWStructuredBuffer<float> boltHeights;
 [[vk::binding(13)]] RWStructuredBuffer<float> adamM;
@@ -30,7 +30,9 @@ struct AdamBoltPC {
     float lambdaBend;       // offset 36 — P3: bending energy strength
     float lambdaSoft;       // offset 40 — P3: soft stroke wall strength
     uint  tanhBound;        // offset 44 — P3: 1=tanh param, 0=physical space
-};  // 48 bytes (was 32)
+    float l1Threshold;      // offset 48 — Phase 5.4: L1 soft-threshold per step
+                            // (lambda_l1 * lr, physical units). 0 = disabled.
+};  // 52 bytes (was 48)
 
 [[vk::push_constant]] AdamBoltPC pc;
 
@@ -94,6 +96,11 @@ void adamUpdateBolt(uint3 tid : SV_DispatchThreadID) {
         float mHat = m / (1.0f - pow(pc.beta1, pc.iterF));
         float vHat = v / (1.0f - pow(pc.beta2, pc.iterF));
         boltHeights[i] -= pc.lr * mHat / (sqrt(vHat) + pc.eps);
+        // Phase 5.4: L1 proximal (soft threshold) in physical h space
+        if (pc.l1Threshold > 0.0f) {
+            float h = boltHeights[i];
+            boltHeights[i] = sign_f(h) * max(abs(h) - pc.l1Threshold, 0.0f);
+        }
         boltHeightGradient[i] = 0.0f;
         return;
     }
@@ -151,6 +158,13 @@ void adamUpdateBolt(uint3 tid : SV_DispatchThreadID) {
     eps_b -= pc.lr * mHat / (sqrt(vHat) + pc.eps);
 
     // Map back to physical space
-    boltHeights[i] = hMax * tanh(eps_b);
+    float h_new = hMax * tanh(eps_b);
+    // Phase 5.4: L1 proximal (soft threshold) in physical h space. The next
+    // iteration recovers eps from this thresholded h via atanh(clamp(...)),
+    // so the proximal step is self-consistent with the tanh parameterization.
+    if (pc.l1Threshold > 0.0f) {
+        h_new = sign_f(h_new) * max(abs(h_new) - pc.l1Threshold, 0.0f);
+    }
+    boltHeights[i] = h_new;
     boltHeightGradient[i] = 0.0f;
 }

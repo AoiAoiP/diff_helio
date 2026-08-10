@@ -410,9 +410,12 @@ S95 不变。物理上等效于安装基座沿负法向统一后移。
 | `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选/Applied Energy 备选/TVCG 风险）+ 重力补偿主线论文大纲 + 后续补充工作（2026-07-28） |
 | `docs/draft.md` | 论文初稿中文版（AEI 版，英文版后续改译）：摘要 + 引言 + 相关工作完整草稿，§3 起为大纲（2026-07-28） |
 | `docs/gravity_compensation_experiment.md` | **重力补偿 Phase 0–4 主报告**：基线/9 组消融终表/差距三分解/台式机幻影重力事故与双机校验规程（2026-07-30） |
-| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-08-03 更新）：悬挑主导发现/margin-密度守恒律/材料纯缩放轴（含钢 t5mm 端到端闭环）/WoS 路线否决/von Kármán ROM 重力 provider + G0–G5 验证门（**G5+FEA(a)(c)(d)+真值修正批完成，m\*≈0.04–0.05、红利 −26.8%**）+ **v2 alpha 细子步重标定（ROM@最优带偏差 +0.4%）** + Phase 5.3 密度扫描（m\*=0.05 下 4 密度 × 4 镜） |
+| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（2026-08-03 旧版，含逐日修订过程；终版 m\*≈0.04–0.05、红利 −26.8%） |
+| `docs/phase5_report.md` | **Phase 5 总报告（重写版，2026-08-05）**：问题提出 + 螺栓排布（margin→密度→端到端位置）× 材料双轴；真值口径数据为准（margin −26.8%、密度甜点 9×7 −11.9%、v4 稀疏 −7.7%、ROM 有效域地图） |
 | `docs/phase5_density_at_optimal_margin.md` | **Phase 5.3 实验方案**：最优 margin 下的螺栓密度扫描完整设计（5×3/7×5/9×7/11×9 @ m=0.05） |
 | `docs/phase5_4_bolt_position_optimization.md` | **Phase 5.4 方案**：逐栓自由布局的端到端可微优化（B3 隐函数梯度 / Group LASSO 稀疏优化 / 子镜分面），含 G0–G5 门体系（2026-08-03） |
+| `docs/phase5_4_implementation_plan.md` | **Phase 5.4 实施设计**：代码考古/双轨架构/门判据与回退（2026-08-04）；执行进展见主报告 §3.10（2026-08-05 起，贪心稀疏证伪→边缘保护内剪） |
+| `docs/phase6_pos_height_joint.md` | **Phase 6 栓位×行程联合优化（已收口 2026-08-07）**：TPS 位置灵敏度（直接法，G0a 级验证）+ bold top-K 阶梯驱动；结论：网格选择>>位置微调（~1% 精修）、10×7 最优初值、无不对称涌现；含下一阶段启动提示词 |
 | `docs/progress_2026-08-01.md` | **2026-08-01 进度总结**：v2 alpha 表细子步重标定 + 论文初稿填充（§3–§7），全部完成 |
 | `analysis/arcaim_comparison.md` | ARCAim (diffspt) 第三章方法论 ↔ 代码映射 + 本项目优化空间（2026-07-20） |
 | `analysis/p0_validation_report.md` | P0 位精确一致性与时空开销验证（2026-07-20） |
@@ -545,6 +548,6 @@ APDL=GUI 位精确一致性已确认，但 **Proxy vs FEA 仍存在系统性偏�
 
 早期整体替换调研（`docs/plate_proxy_replacement_research.md`：POD-ROM、Kirchhoff Green 函数、模态展开、PINN/算子学习、POD+MLP）已证明**整体替换既不必要也不可行**。
 
-Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（`scripts/rom_plate_fem.py` + `rom_field_provider.py`），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c)(d) + **真值修正批**完成：粗子步跳支伪影识别并清除（m04/m06 bins 与 GUI m08 的 46°+ 翻转全属伪影，准静态真值=细子步光滑分支、全部 margin 不翻转），**终版真值曲线 m\*≈0.04–0.05（点估计 0.05，四镜合计 281.2）、同族 margin 红利 −26.8%**（m05 vs m08 384.4；原 m04 255.3/−33.6% 作废）。
+Phase 5.2 的实际落地路线（详见 `docs/phase5_structural_optimization.md` §2.5）：**螺栓影响函数保留 TPS**（布局内插值精度 0.9998 已验证），**重力场 provider 升级为 von Kármán 板 FEM ROM**（~~`scripts/rom_plate_fem.py` + `rom_field_provider.py`~~，已于 2026-08-06 因有效域受限整体退役删除，封存 `archive/rom_retired_2026-08-06/`；后续布局循环改 ANSYS 直解外环），使螺栓 margin/布局进入端到端可微优化闭环。WoS（蒙特卡洛边界积分）路线已经 G1 门否决（cos 0.039）。G5 端到端 + FEA 抽查批 (a)(c)(d) + **真值修正批**完成：粗子步跳支伪影识别并清除（m04/m06 bins 与 GUI m08 的 46°+ 翻转全属伪影，准静态真值=细子步光滑分支、全部 margin 不翻转），**终版真值曲线 m\*≈0.04–0.05（点估计 0.05，四镜合计 281.2）、同族 margin 红利 −26.8%**（m05 vs m08 384.4；原 m04 255.3/−33.6% 作废）。
 
 **v2 alpha 表细子步重标定（2026-08-01–02，§3.9 行动项 1 完成）**：全部布局以 `--nsubst 50,500,50` 重出细子步真值 bins → 重跑 B2 扫描（60/60 VK 收敛）→ alpha 表重拟合为 m04-only（全线正值单调，46°+ 符号修正）→ ROM margin 曲线渲染验证全部 5 个 margin 完成。**终版结论**：ROM 偏差从 m08 +25% 单调收敛至最优带 m04–m05 **+0.4%**（平均）——v1 的 5–8% 系统低估已消除。U 形曲线正确复现，最优带判断与真值一致（m\*≈0.04–0.05）。ROM 重新成为"布局循环内可信评估器"。详见 `docs/phase5_structural_optimization.md` §3.9。

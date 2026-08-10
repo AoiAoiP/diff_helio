@@ -151,6 +151,10 @@ Config loadConfig(const std::string &path) {
     cfg.bendLambda = extractFloat(json, "bend_lambda", 0.0f);
     cfg.softStrokeLambda = extractFloat(json, "soft_stroke_lambda", 0.0f);
     cfg.tanhBound = extractInt(json, "tanh_bound", 1) != 0;
+    // Phase 5.4: L1 LASSO proximal strength on bolt strokes
+    cfg.boltL1Lambda = extractFloat(json, "bolt_l1_lambda", 0.0f);
+    // Phase 5.4 (A3): per-sun surface-gradient dump at the last iteration
+    cfg.dumpSurfaceGrad = extractInt(json, "dump_surface_grad", 0);
 
     float csr = cfg.csr;
     cfg.buieThetaInner = 0.00465f;

@@ -100,6 +100,12 @@ struct Config {
     float bendLambda = 0.0f;            // lambda_b: bending energy strength
     float softStrokeLambda = 0.0f;      // lambda_h: soft stroke wall strength
     bool tanhBound = true;              // 1=legacy tanh; 0=physical space + soft wall
+    // Phase 5.4: L1 (LASSO) proximal strength on bolt strokes for sparse
+    // layout optimization. 0 = disabled (bit-exact legacy behavior).
+    float boltL1Lambda = 0.0f;
+    // Phase 5.4 (A3): dump per-sun surface gradients at the last iteration
+    // (surface_grad_{Mirror}.bin + _meta.csv in outputDir). 0 = off.
+    int dumpSurfaceGrad = 0;
 
     // A1: per-ray angular pre-cull — skip Box-Muller + glass + sunshape for
     // rays whose macro-normal reflection falls outside sun support + margin

@@ -1,0 +1,352 @@
+% !TeX encoding = utf-8
+% !TeX program = pdflatex
+
+\documentclass{CVM}
+
+\newcommand{\blu}[1]{\textcolor{blue}{#1}}
+
+\CVMsetup{
+% -- type
+type      = {Research/Review Article},
+% -- doi
+doi       = {CVM.XXXX},
+% -- title
+title     = {Paper title: Preparation of papers for \textit{Computational Visual Media}},
+% -- author
+author    = {First A. Author$^{1}$, Second B. Author$^{2}$, and Third C. Author$^{3}$\\
+\note{(Please place \cor{} after the corresponding author; use full names, not initials, for all the authors' names)}},
+% -- runauthor
+runauthor = {F. A. Author, S. B. Author, T. C. Author},
+% -- abstract
+abstract  = {
+  This instruction gives you guidelines for preparing papers
+  for the journal \textit{Computational Visual Media} (CVM). Use this document as a LaTeX template. Please provide
+  one paragraph containing a complete but concise description of your work in
+  100--300 words. The abstract should consist of motivation, problem
+  statement, approach, results, and conclusions in order to make the paper
+  appealing to more readers. Be sure to define all symbols used in the
+  abstract. Since the abstract is indexed in many databases, it should be
+  self-contained without any undefined abbreviations or any cited references.
+},
+% -- keywords
+keywords  = {Please provide 4--6 keywords which can be used for indexing purpose},
+% -- copyright
+copyright = {The Author(s)},
+}
+
+%% -- address,
+
+% 1
+%\address{Business or academic affiliation of First A. Author, with city, post code, and country. E-mail: authorA@email.cn.}
+
+% 2
+%\address{Business or academic affiliation of Second B. Author, with city, post code, and country. E-mail: authorB@email.cn.}
+
+% 3
+%\address{Business or academic affiliation of Third C. Author, with city, post code, and country. E-mail: authorB@email.cn.\\
+%\note{\footnotesize (If the authors are from the same affiliation, then the same superscript should be marked on each author's name. Please provide each author's official email address)}
+%}
+
+\begin{document}
+
+\maketitle
+
+\enlargethispage{-3pt}
+\begin{figure}[b] \vskip -4mm
+\small\renewcommand\arraystretch{1.3}
+\begin{tabular}{p{80.5mm}} \toprule\\ \end{tabular}
+\vskip -4.5mm \noindent \setlength{\tabcolsep}{1pt}
+\begin{tabular}{p{3.5mm}p{80mm}}
+$1\quad $ & Business or academic affiliation of First A. Author, with city, post code, and country. E-mail: authorA@email.cn.\\
+$2\quad $ & Business or academic affiliation of Second B. Author, with city, post code, and country. E-mail: authorB@email.cn.\\
+$3\quad $ & Business or academic affiliation of Third C. Author, with city, post code, and country. E-mail: authorB@email.cn.\\
+&{\textcolor{blue} {(If the authors are from the same affiliation, then the same superscript should be marked on each author's name. Please provide each author's official email address)}}\\
+&\hspace{-5mm} Manuscript received: 2025-01-01; accepted: 2025-01-01\vspace{-2mm}
+\end{tabular} \vspace {-3mm}
+\end{figure}
+
+\section{Introduction}
+
+\textit{Computational Visual Media} (CVM) is a single-blinded peer-reviewed open access journal published by
+Tsinghua University Press with all articles available on IEEE Xplore from Volume 11/2025. It publishes original high-quality
+research papers and significant review articles on novel ideas, methods, and
+systems relevant to visual media. CVM would like to invite all of the
+specialists to submit their articles. The effort of the Editorial Board will
+be ensuring the journal to publish novel researches that advance the field,
+and will provide authors with a productive, fair, and timely review
+experience.
+
+\section{Manuscript submission}
+
+Legal requirements for submission of a manuscript include: the work
+described has not been published before, and it is also not under
+consideration for publication anywhere else. Its publication has been
+approved by all co-authors, if any, as well as by the responsible
+authorities (universities, institutes ...) where the work has
+been carried out. The publisher will not be held legally responsible should
+there be any claims for compensation.
+
+Authors wishing to include figures, tables, or texts that have already been
+published elsewhere (including the authors' own previous papers) are
+required to obtain permission from the copyright owner (the publisher of the
+journal, not the authors of the paper) and to state clearly in the
+figure/table caption or other appropriate locations in the manuscript that
+such permission has been obtained. For example: Reproduced with permission
+from Ref.~\cite{1}, \textcopyright{} Copyright-holder Copyright-year. Any content
+received without such evidence will be assumed to originate from the
+authors. It is the authors' responsibility to retain an electronic or
+hardcopy of the permission.
+
+The journal accepts submissions electronically via an online manuscript
+submission, review, and tracking system.
+This will allow quicker and more efficient processing of the manuscripts.
+Please go to the link \url{https://jcvm.org/} to
+submit your manuscript online. To expedite the review process, authors are
+requested to provide a list of potential reviewers. PDF file of the manuscript can be
+uploaded for peer review, and original, high-quality figures are required.
+
+\section{Manuscript preparation}
+
+\subsection{Language}
+The journal's language is English. Either British English or American
+English spelling and terminology may be used, but the system chosen should
+be followed consistently throughout the manuscript. We request that the
+language is corrected before submission. Submissions with unsatisfactory
+English writing will be returned without review.
+
+\subsection{Length of manuscripts}
+There are no strict limits on the number of published pages for both
+research and review articles. Nevertheless, authors are asked to make the
+manuscript as concise as possible and to limit to less than 40 manuscript
+pages. Please be noted that the main text of short communication should not exceed 6 pages, with no more than 10 references, and the total length should not exceed 8 pages.
+
+\subsection{Text formatting}
+The authors are encouraged to use our LaTeX template to prepare the draft
+manuscripts. Word files are not acceptable. For peer review, it is enough to upload a PDF of the manuscript. After acceptance, the production editor from the Editorial Office will contact the authors and please just supply your
+manuscript as a SINGLE latex source file and check your source file again,
+especially the TeX log file (*.log) and BiBTeX log file (*.blg) to ensure
+they are free from errors and major warnings. Since we will send the
+manuscript for language polishing, copy editing, and typesetting, if there
+are such errors in the source file, it will affect the process if there
+exist any errors and major warnings.
+
+\section{Detailed formatting instructions}
+
+\subsection{Heading/section levels (numbered)}
+For regular research and review articles, please use the decimal system of
+headings. Please divide your manuscript into clearly defined and numbered
+sections and subsections. Sections should be numbered 1, 2, etc. Subsections
+should be numbered 1.1 (then 1.1.1, 1.1.2 ...), 1.2, etc. Use
+this numbering also for internal cross-referencing: Do not just refer to
+``the text''. Each section and subsection should be given a brief heading
+and each heading should appear on its own separate line.
+
+\subsection{Footnotes}
+Essential footnotes to the text should be numbered consecutively and placed
+at the bottom of the page to which they refer. Footnotes to the table should
+be indicated by superscript lower-case letters (or asterisks) and placed
+immediately below the table.
+
+\subsection{Formulae and symbols}
+Formulae, symbols, and all subscripts, superscripts, Greek letters, and
+other characters must be legible and carefully checked. Standard
+mathematical notation should be used. All symbols used in the manuscript
+must be explained. A list of symbols should follow the abstract if such a
+list is needed.
+
+Single letters that denote mathematical constants, variables, and unknown
+quantities should be set in \textit{italic} type in the text and in equations. Numerals, operators, and punctuation should be set in Roman type (upright), as are
+commonly defined functions or abbreviations, e.g., cos, det, e or exp, lim,
+log, max, min, sin, tan, d (for derivative) should also be upright. Vectors,
+tensors, and matrices should be set in \textit{\textbf{bold italic}}.
+
+Numbering consecutively any equations that have to be displayed separately
+from the text (if referred to explicitly in the text), and referring the
+equation with Eq.~\eqref{eq1}, Eq.~\eqref{eq2} ... in the text.
+\begin{align}
+\|\tilde{X}(k)\|^2 \leq \frac{\sum_{i=1}^{p}\left\|\tilde{Y}_i(k)\right\|^2+\sum_{j=1}^{q}\left\|\tilde{Z}_j(k)\right\|^2 }{p+q} \label{eq1}
+\end{align}
+where
+\begin{align}
+\label{eq2}
+D_\mu &=  \partial_\mu - ig \frac{\lambda^a}{2} A^a_\mu \\
+F^a_{\mu\nu} &= \partial_\mu A^a_\nu - \partial_\nu A^a_\mu + g f^{abc} A^b_\mu A^a_\nu
+\end{align}
+
+\subsection{Figures}
+All figures should be numbered using Arab numerals as Fig.~\ref{fig1} XXX, Fig.~2 XXX ... and supplied with a figure caption (figure parts should be
+denoted by lower-case letters). Please make sure that all elements found in
+the figure are identified in the caption. Figures should always be cited in
+the text, such as Fig.~\ref{fig1}, Fig.~2, in consecutive numerical order.
+
+\begin{figure}[h!t]
+\centering
+\includegraphics[width=.4\linewidth]{fig1}
+\caption{This is where the figure caption goes.}
+\label{fig1}
+\end{figure}
+
+
+%tab1
+\begin{table*}[h!t]
+\center
+\caption{Propellant masses vs. transfer time using orbital averaging and guidance scheme}
+\begin{tabular}{llllllllll}
+\toprule
+\multirow{2}{*}{\diagbox{Time (days)}{Mass (kg)}} & \multicolumn{3}{c}{Case 1} & \multicolumn{3}{c}{Case 2} & \multicolumn{3}{c}{Case 3} \\
+\cmidrule{2-10}
+                  & 202.9$^{*}$ & 300    & 400    & 70.2$^{*}$ & 100   & 150   & 205.7$^{*}$ & 300    & 400\\
+\midrule
+Orbital averaging & 197.52      & 182.82 & 175.15 & 36.45      & 30.58 & 29.75 & 199.32      & 177.07 & 171.82\\
+Guidance scheme   & 197.45      & 183.06 & 176.92 & 36.42      & 30.52 & 29.69 & 199.20      & 177.56 & 173.04\\
+\bottomrule
+\end{tabular}
+\label{tab1}
+\end{table*}
+
+\begin{enumerate}
+
+\item Original figures should be in high quality with the resolution of 600
+dpi.
+
+\item Figures should be in the proper size, less than 8 cm or 16 cm in width,
+and less than 24 cm in height. When making a figure, please set the size
+first, and then write down words, numbers, symbols, etc.
+
+\item Use a normal, uniform font (Times New Roman, 10-point) for all the words
+and numbers in figures.
+
+\item Only the first letter of the first word in a phrase should be
+capitalized, except proper nouns.
+
+\item If there is an axis system in the figure, the coordinate line and
+coordinate point should be drawn in bold.
+
+\item Lines in the figure should be clear and in black with medium line
+thickness.
+
+\item If the number is larger than 1000, each group of three digits should be
+separated by a comma. For instance, 1630000 should be written as 1{,}630{,}000.
+
+\item The unit in axis titles should be enclosed in parentheses, for example,
+``Flow discharge (\si{m^3/s})''.
+
+\item The background of figures should be deleted.
+\end{enumerate}
+
+\subsection{Tables}
+All tables should be numbered using Arab numerals as Table~\ref{tab1} XXX, Table~2 XXX ... and supplied with a table title which explains clearly and
+concisely the components of the table. Tables should not duplicate results
+presented elsewhere in the manuscript (for example, in figures). Tables
+should always be cited in the text, such as Table 1, Table 2, in consecutive
+numerical order.
+
+\begin{enumerate}
+\item Use a normal, uniform font (Times New Roman, 10-point) for all the words
+and numbers in tables.
+
+\item Only the first letter of the first word in a phrase should be capitalized, except proper nouns.
+
+\item If the number is larger than 1000, each group of three digits should be
+separated by a comma. For instance, 1630000 should be written as 1{,}630{,}000.
+\end{enumerate}
+
+\subsection{Units and abbreviations}
+Please adhere to internationally agreed standards such as those defined by
+the International Organization of Standardization (ISO). Metric SI units
+should be used throughout except where non-SI units are more common (e.g.,
+liter (L) for volume).
+
+Abbreviations should be used only if deemed absolutely necessary, and should
+be defined at first mention in the abstract and again in the main body of
+the text and used consistently thereafter.
+
+\section{Conclusions}
+A conclusion is not restatement of the abstract, but to stress the
+importance of the work, to give the paper a sense of completeness, and leave
+a final impression on the readers. The conclusion section is the last
+section of the paper to be numbered.
+
+\appendix
+
+\subsection*{Appendix \note{(if applicable)}}
+An appendix, if needed, is presented without numbers. If there are two or
+more appendices, they should be numbered consecutively. Equations in
+appendices should be designated differently from those in the main body of
+the manuscript, e.g., (A1), (A2), etc. In each appendix equations should be
+numbered separately.
+
+\subsection*{Availability of data and materials}
+
+``Not applicable.'' OR ``The data that support the findings of this study can be downloaded from xxxxxxx / are available from the corresponding author upon reasonable request.''
+
+\subsection*{Author contributions}
+
+The individual contributions of authors to the manuscript should be specified in this section. ``Author 1 is responsible for Work 1. \dots\ All the authors have approved the final manuscript.'' CRediT author statement (https://credit.niso. org/) is recommended to use.
+
+\subsection*{Acknowledgements}
+Acknowledgements of people,
+grants, funds, etc., should be placed in a separate section before reference
+list. The names of funding organizations should be written in full. Do not
+include acknowledgements on the title page, as a footnote to the title or
+otherwise.
+
+\subsection*{Declaration of competing interest}
+
+The authors have no competing interests to declare that are relevant to the
+content of this article.\\
+\note{(Please confirm when the manuscript is submitted)}
+
+\subsection*{Electronic Supplementary Material  \note{(if applicable)}}
+
+If ESM is submitted, it will be published as received from the author in the
+online version only. ESM may consist of: (i) information that cannot be
+printed: animations, video clips, sound recordings; (ii) information that is
+more convenient in electronic form: sequences, spectral data, etc.; (iii)
+large amounts of original data, e.g., additional tables, illustrations, etc.
+If supplying any ESM, the text must make specific mention of the material as
+a citation, similar to that of figures and tables (e.g., Fig. S1 in the
+ESM). Besides, a paragraph should be added before the ``References'' section
+(e.g., Electronic Supplementary Material: Supplementary material (add a
+brief description) is available in the online version of this article).
+% \pagebreak
+
+\begin{thebibliography}{9}
+
+\bibitem{1} Summa, B.; Tierny, J.; Pascucci, V. Panorama weaving: Fast and flexible
+seam processing. \textit{ACM Transactions on Graphics} Vol. 31, No. 4, Article No. 83, 2012.
+
+\bibitem{2} Brown, M.; Lowe, D. G. Automatic panoramic image stitching using
+invariant features. \textit{International Journal of Computer Vision} Vol. 74, No. 1, 59--73, 2007.
+
+\bibitem{3} Brown, M.; Lowe, D. G. Recognising panoramas. In: Proceedings of the 9th
+IEEE International Conference on Computer Vision, 1218--1225, 2003.
+
+\bibitem{4} Meyer, Y. \textit{Oscillating Patterns in Image Processing and Nonlinear Evolution Equations: The Fifteenth Dean Jacqueline B. Lewis Memorial Lectures}. Boston, MA, USA: American Mathematical Society, 2001.
+
+\bibitem{5} Prewitt, J. M. S. Object enhancement and extraction. In: \textit{Picture Processing and Psychopictorics}. Lipkin, B.;
+Rosenfeld, A. Eds. New York, NY, USA: Academic Press, 15--19, 1970.
+
+\bibitem{6} Lu, L.; Choi, Y.-K.; Sun, F.; Wang, W. Variational circle packing based
+on power diagram. Technical Report. The University of Hong Kong, 2011.
+Available at \url{http://vr.sdu.edu.cn/~lulin/CP_TechReport.pdf}
+
+\bibitem{7} Information on \url{http://www.adobe.com/technology/projects.html}
+\end{thebibliography}
+
+% for bibtex
+% \bibliographystyle{CVMbib}
+% \bibliography{refs}
+
+\subsection*{Author biography}
+\note{(at least the first author's and the corresponding author's)}
+
+\begin{biography}[author1]{Author Name} Please supply the colorful photo, and one-paragraph introduction (study experience, research interests, awards received, etc.) of each author of the work.
+\end{biography}
+
+\vspace*{2.6em}
+\subsection*{Graphical abstract}
+
+It is a single, concise, and pictorial summary of the main findings of the article. It could either be the concluding figure from the article or better still a figure that is specially designed for the purpose, which captures the content of the article for readers at a single glance. We require it in JPG format, 300 dpi, and with the ratio of height to length $= 8 : 13$.
+
+\end{document}

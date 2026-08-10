@@ -1,0 +1,28 @@
+{
+  "description": "7x5 margin=0.05 explicit line coordinates (Phase 5.4 verification)",
+  "positions_x": [
+    -5.7780000000000005,
+    -3.852,
+    -1.9260000000000002,
+    0.0,
+    1.9260000000000002,
+    3.8520000000000003,
+    5.7780000000000005
+  ],
+  "positions_z": [
+    -4.2524999999999995,
+    -2.1262499999999998,
+    0.0,
+    2.1262500000000006,
+    4.2525
+  ],
+  "plate_width_m": 12.84,
+  "plate_length_m": 9.45,
+  "plate_thickness_m": 0.004,
+  "youngs_modulus_pa": 70000000000.0,
+  "poisson_ratio": 0.22,
+  "density_kg_m3": 2500,
+  "gravity_m_s2": 9.81,
+  "mesh_ndiv_x": 64,
+  "mesh_ndiv_z": 48
+}

@@ -1,6 +1,6 @@
 # Phase 5 总报告：结构层优化——支撑布局 × 材料 × 可微重力场 ROM
 
-> **状态（2026-08-03）**：Phase 5.0/5.1/材料轴（含钢 t5mm 端到端）已闭环；Phase 5.2 Track B ROM 研制完成、G2 通过；G5 端到端 + FEA 抽查批 (a)(c)(d) + **真值修正批**完成——粗子步跳支伪影识别并清除，**终版真值曲线 m\*≈0.04–0.05（点估计 0.05），同族红利 −26.8%**（§3.8）。Phase 5.3 密度扫描完成（m\*=0.05 下 4 密度 × 4 镜 100 iter）。Phase 5.4（逐栓自由布局优化）方案已出（`phase5_4_bolt_position_optimization.md`）。
+> **状态（2026-08-05）**：Phase 5.0/5.1/材料轴（含钢 t5mm 端到端）已闭环；Phase 5.2 Track B ROM 研制完成、G2 通过；G5 端到端 + FEA 抽查批 (a)(c)(d) + **真值修正批**完成——粗子步跳支伪影识别并清除，**终版真值曲线 m\*≈0.04–0.05（点估计 0.05），同族红利 −26.8%**（§3.8）。Phase 5.3 密度扫描完成（m\*=0.05 下 4 密度 × 4 镜 100 iter）。**Phase 5.4（逐栓自由布局）主线闭环**（§3.10）：基建/B1/G0（VK 联合雅可比双角度精确）/G1'（ROM 幻影支撑修复）收官；贪心稀疏被双重证伪（G4 均匀 72=268.55 > 稀疏 74=284.53，真值 462.76——门体系拦截）；**边缘保护内剪 v4 通过真值终裁（G5）：91 栓真值 259.55，较 7×5 m05 基线 −7.7%、较稠密 99 栓 −4.4% 且少 8 栓，"边缘密+中心疏"设计规则真值口径成立**。
 > **本文档取代并整合**：`material_steel_feasibility.md`、`phase5_layout_optimization.md`、`phase5_2_wos_layout_optimization.md`、`phase5_2_g5_desktop_ops.md`（四文档已并入本报告相应章节，原文件退役）。
 > 前置：`gravity_compensation_experiment.md`（Phase 0–4 主报告）。
 
@@ -533,6 +533,88 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 
 ---
 
+## 3.10 Phase 5.4 逐栓自由布局：基建闭环、门体系裁决与稀疏外环（2026-08-04/05，执行中）
+
+> 策略文档 `phase5_4_bolt_position_optimization.md`；实施设计 `phase5_4_implementation_plan.md`（代码考古 + 双轨架构）。本节记录执行进展。渲染级数字均为 300m NEWS @110dir 100-iter best S95（m²）；ROM 口径 = v2 细子步 alpha 表 provider + 按布局 TPS φ；真值口径 = ANSYS `--nsubst 50,500,50` 细子步。
+
+### 3.10.1 实施基建（S0/T0/B1/A1，全部验收通过）
+
+- **布局 schema 三形式**（`scripts/layout_utils.py` 共享解析，向后兼容）：`bolts_x/z+margin`（grid）/ `positions_x/z`（lines）/ `bolt_positions`（free，逐栓坐标）。三个消费方（`generate_proxy_model.py`、`ansys_gravity.py`、`rom_field_provider.py`）接入；TPS 生成支持任意坐标（grid 回放逐位一致，lines 形式差 ~2e-11 ULP）；顺带修复 GBK locale 下 JSON UTF-8 读取崩溃（density 系列 JSON 含 em-dash，此前在本机从未被成功消费）。
+- **ROM 任意布局网格**：`make_mesh` 改为栓线坐标数组 + **节点溯源表**（Track A 灵敏度原料）+ 防塌缩断言（硬线重合显式 raise）；provider `--bolt-layout` 模式按布局生成 TPS φ（φ 是栓集红利基函数，弃用 Phase 5.2 的 m08 拷贝捷径）。回放验证：m04/m05/m06 显式均匀坐标 vs margin 模式 ≤1.4e-7；与历史 `data_rom/m04`（旧代码制品）交叉 1.4e-7。
+- **渲染器**：`loadBin` 尺寸硬校验（`gravity_y.bin` 为遗留兼容文件，需特判零填充——首次加校验即暴露此隐性短读）；`kMaxBolts` 50→128（99 栓前提）；**`bolt_l1_lambda` L1 近端**（AdamBoltPC 48→52B，两分支物理 h 空间软阈值，λ=0 逐位回归通过）。λ 行为标定（G2b，35 栓 m05 30-iter）：λ≤0.1 S95 中性、λ=1.0 轻损（+2）、λ=10 冻结（prox 阈值 4mm/iter 吃掉 Adam 步长）。
+- **G2a 合成支撑恢复 PASS**：斜率空间 CD-LASSO 从 99 栓字典精确恢复 25 栓已知支撑（precision/recall=1.000，λ∈[3.2e-3, 1e-2]）。
+- **G0 布局梯度双模式 PASS**：线性板隐函数灵敏度 12/12（rel_err ~2e-4 = FD 截断量级）；**von Kármán 联合雅可比**（弯曲-膜残差联立 IFT，逐元复步长切线块 + 自由 DOF 限制消刚体奇异）**10°/58° 双角度 12/12**（rel_err ~3e-4）。**VK 冻结近似（只穿几何、冻结膜态）被否决**：方向对（cos 0.95）但幅值系统偏差 +34–100%——膜态反馈不可忽略，与 §3.5 诊断四（w/t≈2 深膜区）一致。
+
+### 3.10.2 G1' 非均匀布局真值门：ROM 幻影支撑修复与有效域测绘
+
+3 扰动布局 × ANSYS 细子步真值（4 探针角）：
+
+- **首裁 FAIL 根因 = ROM BC 幻影支撑**：`PlateROM` 的支撑 patch 施加于 `bpx × bpz` **全部笛卡尔交点**——自由/剪枝布局中不存在的栓位也被施加支撑（p2 99→79 幅值比 13.5 的来源）。修复：`bolt_pairs` 真实栓位列表（网格仍取并集张量线）；验证：剪枝布局支撑数随栓数下降、10° 下垂 2.96→8.70mm（物理方向正确）。**B3 round 0（满网格）不受影响**（Cartesian ≡ pairs）。
+- **复裁**：p1（单栓移位 0.1m）**4/4 全过**（保真度与均匀基线同带）；p2/p3 低角度形状 cos 0.90–0.97 但幅值比 1.3–2.5×、80° 崩坏——定性为 §3.9 已知 **alpha(θ, w/t) 传递限制**（细表为 7×5 均匀 m04 标定，剪枝布局 w/t 水平不同）。均匀 m05 基线保真度本身为 cos 0.77–0.93（80° 最低），判据修订为**均匀基线带相对口径**。
+- **降级裁定（用户）**：不外降 ANSYS 直解，采用 **"ROM 外环 + 真值锚定终裁"**——终局布局全部 ANSYS 细子步真值复跑裁决（≤3 批预算）。
+
+### 3.10.3 真值锚定体系：ROM 有效域的实证地图
+
+| 布局 | N | ROM 口径合计 | 真值口径合计 | 渲染级偏差 | 判读 |
+|---|---|---|---|---|---|
+| 均匀 7×5 m05 | 35 | 291.3（v2 曲线） | 281.2（§3.8） | +3.6% | 已知口径差 |
+| 稠密 11×9 m05 | 99 | 271.02 | **271.53** | **+0.2%** | **ROM 满网格精确** |
+| 均匀 9×8 m05 | 72 | 268.55 | — | — | G4 对照（仅 ROM 口径） |
+| 贪心稀疏（v3 终局） | 74 | 284.53 | **462.76** | **+63%** | **ROM 出界失败** |
+| **v4 稀疏最优（边缘保护）** | **91** | 266.41 | **259.55** | **−2.6%** | **真值裁决通过（G5）** |
+
+- **99 栓锚定（决定性证据）**：ANSYS 细子步 20 角 bins（分支体检 cos(vs10°)≥0.86 全程光滑）+ 真值复跑 271.53 vs ROM 271.02——**ROM+细 alpha 表在满网格布局的渲染级精度达 0.2%**，"ROM 外环 + 真值终裁"路线的核心假设实测成立。
+- **稀疏 74 出界（同样决定性）**：贪心删除底排 3 栓 → 底排出现 **6.93m 无支撑跨度** → 真值 10° 边缘 flap 下垂 **31.2mm**（原始 ANSYS CSV −35.6mm，FEA 原生非分箱伪影）；ROM 同场仅 7.66mm（**幅值低估 4×**，远超 alpha 传递 1.3–1.5× 范畴）。真值复跑 462.76 vs ROM 声称 284.53——**ROM 外环找出的"可接受布局"在真值下不可接受，门体系按设计拦截了错误结论**。
+- **有效域边界（v2 alpha 表之外的第二个结构性边界）**：满网格/小扰动 → 渲染级 ~0.2%；含 >1m 无支撑边缘跨度的剪枝布局 → 场幅值 4×/S95 63% 失真，不可用。
+
+### 3.10.4 B3 稀疏外环 v3（贪心行程排名）：轨迹与证伪
+
+λ=0.1（S95 中性）、每轮删 max|h| 最弱的 10 栓、S95 接受准则（天花板 291.3、回归 ≤5%）、删除减半重试：
+
+| 轮 | N | ROM 口径合计 | 裁决 |
+|---|---|---|---|
+| r0 | 99 | 271.02 | ✅ 基线 |
+| r1 | 89 | **270.17** | ✅（删 10 栓免费且微降） |
+| r2 | 79 | 282.60 | ✅ |
+| r3 | 69 | 292.41 | ❌ 越线 |
+| r4 | 74 | 282.55 | ✅（减半重试） |
+| r5 | 69 | 284.55 | ✅ |
+| r6 | 69 | 292.06 | ❌ 再拒 |
+| r7 | 74 | 284.53 | ✅ 终局 |
+
+- **行程摊派实测**：99 栓优化后 min max|h| = 1.3mm（p5 = 2.3mm）——TPS 单位分解使行程摊派到所有可用作动器，**零栓"自然"可剪**（λ=0.1/τ=0.5mm 下）；稀疏信号必须主动逼迫。
+- **G4 同 N 对照（控 N 单变量）**：均匀 9×8=72 = **268.55** < 稠密 99 = 271.02 < 贪心稀疏 74 = 284.53——**"位置>>数量"强形式 ROM 口径证伪**：均匀网格在同 N 下显著优于贪心非均匀（−5.6%）。
+- **失败根因诊断**：贪心行程排名混淆**作动器效用与支撑效用**——底排栓行程小（重力近中性区作动器冗余）但支撑关键；删之开 6.93m 天窗 → 35mm flap。行程排名度量的是"这栓推多少"，不是"这栓撑多重"。
+
+### 3.10.5 B3 v4（边缘保护内剪）
+
+修正实验：保护 11×9 的 36 周边栓（最外圈线），仅剪内部 63 栓，其余协议同 v3：
+
+| 轮 | N | ROM 口径合计 | 裁决 |
+|---|---|---|---|
+| r0 | 99 | 271.02 | ✅ 基线 |
+| r1 | 91（删 8 内部栓） | **266.41** | ✅ **全局最优** |
+| r2 | 83 | 275.42 | ✅ |
+| r3 | 75 | 289.55 | ❌ 越线（天花板 289.19） |
+| r4 | 83 | 275.37 | ✅（减半重试） |
+| r5 | 79 | 283.59 | ✅ 终局 |
+
+- **内部冗余确实存在**：99→91 删 8 内部栓后 S95 不升反降（−1.7%）；91 栓非均匀（266.41）优于稠密 99（271.02）**与同 N 级均匀对照 72（268.55）**——首个 ROM 口径优于均匀对照的非均匀布局。
+- 边界：N≤83 后单调退化（83→275.4、79→283.6、75→289.6 触顶）；v4 全程无边缘天窗，处于 ROM 已验证有效域。
+- **真值锚定⑤（G5 终裁，通过）**：91 栓最优布局 ANSYS 细子步 20 角真值 bins（分支体检：无跳支；76°+ PV≤0.14mm 微幅值段形状余弦不作判据）+ 真值复跑（100 iter @110dir）：**N 50.13 / E 66.02 / S 70.75 / W 72.64，合计 259.55**——vs ROM 266.41（ROM 保守高估 2.6%，与 alpha 传递已知方向一致）；vs 真值基线 7×5 m05 281.2（**−7.7%**）、稠密 99 栓 271.53（**−4.4% 且少 8 栓**）。**"边缘密+中心疏"设计规则在真值口径成立（G5 PASS）**：在 11×9 满网格基础上剪掉 8 个内部栓（边缘 36 栓全保），S95 与栓数双优。
+- 布局文件：`configs/bolt_layouts/free/v4_best_91.json`（91，真值终裁件）、`v4_final_79.json`（79）；真值 bins `data_proxy_truth/v4_best_91/`；真值结果 `results_truth/v4_best_91/`；轨迹 `analysis/sparse_path_v3.csv`（v4 覆盖写入）。
+
+### 3.10.6 阶段判读（终版，2026-08-05）
+
+1. **位置优化的价值层次重排**：支撑完整性（尤其边缘）>> 栓数（密度）> 位置微调。贪心自由化在 ROM 与真值双口径下均劣于同 N 均匀网格；**"位置>>数量"强形式（少栓自由布局替代多栓均匀布局）证伪**。
+2. **"边缘密+中心疏"弱形式成立（真值口径）**：11×9 满网格剪 8 内部栓（周边全保）→ 真值 259.55，较 7×5 m05 基线 −7.7%、较稠密 99 栓 −4.4% 且少 8 栓——设计规则"边缘栓一根不能动、内部栓有约 10% 冗余"可直接进论文设计建议节。
+3. **ROM 角色再定位的实证支撑**：满网格/无边缘天窗布局 0.2–2.6% 渲染级精度使"布局循环内可信评估器"成立；有效域须显式约束（边缘完整性/最小支撑跨），出界即 4× 场失真（v3 稀疏 74 的 462.76 教训）。
+4. **方法论收获（论文素材）**：(a) ROM 幻影支撑与作动器/支撑效用混淆是两个独立的布局优化陷阱；(b) 门体系 + 真值锚定的两阶段方法论在错误结论进入论文前完成拦截——与 §3.8 粗子步跳支教训同属"数值实验可信度工程"主线。
+5. **Track A 梯度基础已备**：VK 联合雅可比（G0 双角度 12/12）+ 渲染级梯度收缩（A3 sanity：dL/dmargin @m08 = +2.6e4 m²/m，符号与量级同 v2 曲线 FD 一致；逐线梯度复现悬挑主导）——幸存者位置精炼（A4）留作后续。
+
+---
+
+
 # 附录
 
 ## A. 判定标准汇总
@@ -584,6 +666,7 @@ python scripts/rom_margin_optimize.py --margins 0.06,0.05,0.04,0.03 --tag rom  #
 - 数据：`analysis/rom_b2_sweep.csv`、`rom_b2_alpha_table.csv`、`rom_g5_margin_curve_{base,rom,smoke}.csv`（G5）、`material_swap_report.md`、`layout_scan_report.md`、`margin_scan_report.md`、`margin_full_report.md`
 - G5：`rom_g5_results_20260731/`（本地结果包，gitignored：results_rom/ 7 组 + data_rom/ 5 布局制品 + provider 日志）；`configs/_eval_g5a_m06_ansys_110.json`（门 A m06 同族渲染裁决）；FEA(a)：`configs/_{eval,rerun}_g5t_*.json`（4 评估 + 2 重优化）、`results_g5truth/`、`data/init_g5truth/`（ROM 最优螺栓迁移 init）；FEA(c)：`data_proxy_margin/7x5_margin08/`（脚本版 m08 真值，20×3-plane）、`results_scriptm08/`（compinit + rerun）、`configs/_{eval,rerun}_g5t_m08script*.json`；FEA(d)：`scripts/branch_adjudicate_m08.py`（细子步/--rotfix/--meshfine/--layout/--angles）、`validation/branch_m08/`（变体 CSV）、`logs/_branch_m0*_*.log`；真值修正批：`data_proxy_margin/7x5_margin0{3,4,5,6}_fine/`（细子步真值，20×3-plane）、`configs/_rerun_g5tf_m0{3,4,5,6}.json`、`results_g5truth/rerun_m0{3,4,5,6}_fine/`、`scripts/ansys_gravity.py --nsubst`；交付包：`results_final_m05/`（m\*=0.05 终版：README + 布局行程 CSV + 面型/光斑图 + 334dir 终评 + flux NPY；`results_final_m04/` 作废）、`scripts/export_final_package_m04.py`、`scripts/dump_final_spots.py`、`configs/_{eval,dump}_final_*.json`、`data/init_final/`
 - v2 alpha：`scripts/rom_b2_validation_fine.py`（细子步 B2 验证 + alpha 表拟合）、`analysis/rom_b2_sweep_fine.csv`、`analysis/rom_b2_alpha_table_fine.csv`（m04-only 细子步 alpha 表）；`data_rom_fine/`（v2 alpha ROM 场 m03–m08）、`results_rom_v2/`（v2 渲染验证，5 margin 全量）、`analysis/rom_g5_margin_curve_v2_fine.csv`
+- Phase 5.4（§3.10）：`scripts/layout_utils.py`（布局 schema 三形式共享解析）；`scripts/rom_layout_sensitivity.py`（G0：线性/VK 冻结/VK 联合雅可比布局灵敏度）、`scripts/rom_line_layout_optimize.py`（A2 线布局试点）、`scripts/layout_gradient.py`（A3 渲染级梯度收缩）；`scripts/g2_lasso_recovery.py`（G2a 合成支撑恢复）、`scripts/g1p_nonuniform_truth.py`（G1' 裁决）、`scripts/sparse_layout_optimize.py`（B3 稀疏外环，含 `--protect-edge`）；布局 `configs/bolt_layouts/free/`（显式坐标验证件、G1' 扰动件、sparse_v3_round*、`uniform_9x8_m05.json`；v3 终局归档于 `free/archive_v3/`）；真值锚定 `data_proxy_truth/{11x9_margin05,sparse74}`、`results_truth/{11x9_m05,sparse74}`；稀疏轨迹 `analysis/sparse_path_v3_B3v3.csv`、`analysis/sparse_path_v3.csv`（v4）；渲染器侧新配置键 `bolt_l1_lambda`、`dump_surface_grad`；`kMaxBolts` 50→128
 - 渲染器接口：`src/config.cpp:118-123`（num_bolts_x/z、bolt_margin、influence_data_path）、`src/pipeline.cpp:495-561`（20-bin 3-plane 重力加载）
 
 ## C. 风险与边界

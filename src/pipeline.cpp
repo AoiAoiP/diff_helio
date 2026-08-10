@@ -463,8 +463,8 @@ void BezierPipeline::createBoltPipelines() {
     m_pipeBoltBackwardReduce = createPipe(m_spvBoltBackwardReduce, "main", 0);
     m_pipeBoltProject   = createPipe(m_spvBoltProject,   "main", sizeof(uint32_t) * 4);  // BoltBackwardPC
     m_pipeBoltClearSurface = createPipe(m_spvBoltClearSurface, "main", 0);
-    // AdamBoltPC: lr(4)+beta1(4)+beta2(4)+eps(4)+iterF(4)+numBolts:uint(4)+hMax(4)+lambda(4)=32B
-    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", 48);  // P3: 12 floats
+    // AdamBoltPC: 12 floats (48B) + l1Threshold (4B) = 52B
+    m_pipeBoltAdam      = createPipe(m_spvBoltAdam,      "main", 52);  // Phase 5.4: 13 floats
     // P1-A2: specialized sunshape pipelines
     for (int i = 0; i < 3; i++) {
         m_pipeForwardTyped[i]     = createPipe(m_spvForwardTyped[i],     "main", 0);
@@ -571,13 +571,39 @@ void BezierPipeline::createBoltBuffers() {
     size_t infSize = n * gridPts * sizeof(float);
     auto loadBin = [&](const std::string &fname, GpuBuffer &buf) -> bool {
         std::string path = m_cfg.influenceDataPath + "/" + fname;
-        std::ifstream f(path, std::ios::binary);
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
         if (!f) {
             fmt::print("  WARNING: Cannot open {}\n", path);
             return false;
         }
+        // Phase 5.4: hard size check — a bolt-count mismatch between the bin
+        // and num_bolts previously read garbage silently.
+        size_t fileSize = (size_t)f.tellg();
+        if (fileSize != infSize) {
+            fmt::print("  ERROR: {} size {} bytes != expected {} (num_bolts={} x gridPts={} x 4)\n",
+                       path, fileSize, infSize, n, gridPts);
+            throw std::runtime_error("Influence bin size mismatch: " + path);
+        }
+        f.seekg(0);
         std::vector<float> data(n * gridPts);
         f.read(reinterpret_cast<char*>(data.data()), infSize);
+        buf = m_app.createBuffer(infSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        m_app.uploadBuffer(buf, data.data(), infSize);
+        return true;
+    };
+    // Legacy gravity_y.bin (compat copy of the first gravity bin): not an
+    // NB×gridPts file — zero-pad short reads exactly like the old code did.
+    auto loadBinPadded = [&](const std::string &fname, GpuBuffer &buf) -> bool {
+        std::string path = m_cfg.influenceDataPath + "/" + fname;
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
+        if (!f) {
+            fmt::print("  WARNING: Cannot open {}\n", path);
+            return false;
+        }
+        size_t fileSize = std::min((size_t)f.tellg(), infSize);
+        f.seekg(0);
+        std::vector<float> data(n * gridPts, 0.0f);
+        f.read(reinterpret_cast<char*>(data.data()), fileSize);
         buf = m_app.createBuffer(infSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
         m_app.uploadBuffer(buf, data.data(), infSize);
         return true;
@@ -587,7 +613,7 @@ void BezierPipeline::createBoltBuffers() {
     bool ok = loadBin("influence_phi.bin", m_influencePhi);
     ok = loadBin("influence_phi_u.bin", m_influencePhiU) && ok;
     ok = loadBin("influence_phi_v.bin", m_influencePhiV) && ok;
-    ok = loadBin("gravity_y.bin", m_gravityY) && ok;
+    ok = loadBinPadded("gravity_y.bin", m_gravityY) && ok;
     if (!ok) throw std::runtime_error("Failed to load influence data. Run scripts/generate_proxy_model.py or scripts/pod_train.py first.");
 
     // Anchor buffers (regGram + anchorTarget, bindings 26/27): zero-filled dummies so the
@@ -995,8 +1021,8 @@ void BezierPipeline::boltAdamStep(uint32_t iteration) {
     float hMax = std::max(m_cfg.maxBoltStroke, 1e-6f);
     float lrComp = m_cfg.tanhBound ? (lr / hMax) : lr;
     // Layout: lr, beta1, beta2, eps, iterF, numBolts(uint), hMax, lambdaStroke,
-    //         lambdaAnchor, lambdaBend, lambdaSoft, tanhBound(uint) = 48B
-    float pc[12] = {
+    //         lambdaAnchor, lambdaBend, lambdaSoft, tanhBound(uint), l1Threshold = 52B
+    float pc[13] = {
         lrComp, m_cfg.beta1, m_cfg.beta2, m_cfg.adamEpsilon,
         0.0f,  // pc[4]=iterF placeholder (overwritten below)
         0.0f,  // pc[5] placeholder (numBolts via memcpy)
@@ -1005,7 +1031,8 @@ void BezierPipeline::boltAdamStep(uint32_t iteration) {
         m_cfg.anchorLambda,           // pc[8]
         m_cfg.bendLambda,             // pc[9]
         m_cfg.softStrokeLambda,       // pc[10]
-        0.0f                          // pc[11]=tanhBound (via memcpy)
+        0.0f,                         // pc[11]=tanhBound (via memcpy)
+        m_cfg.boltL1Lambda * lr       // pc[12]: L1 prox threshold = lambda * lr
     };
     pc[4] = static_cast<float>(iteration);
     std::memcpy(&pc[5], &n, sizeof(uint32_t));  // numBolts at offset 20
@@ -1801,6 +1828,12 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         // L1: per-sun reference energy captured at iteration 0 (GPU S95 path only)
         std::vector<float> energyRef(trainDirs.size(), 0.0f);
 
+        // Phase 5.4 (A3): per-sun surface-gradient dump accumulators
+        // (filled at the last iteration, written before returning)
+        std::vector<float> sgDump;              // numSuns x 3 x gridPts
+        std::vector<std::string> sgMeta;        // "si,lo,hi,gt" per sun
+        const uint32_t sgGridPts = m_cfg.gridSize * m_cfg.gridSize;
+
         for (uint32_t iter = 0; iter < m_cfg.iterations; iter++) {
             auto tIter = std::chrono::steady_clock::now();
             m_currentIteration = iter;  // P1-L3: per-iteration seed
@@ -1840,9 +1873,9 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                 // staging buffer + submit + vkQueueWaitIdle per sun. Update it
                 // inline in the command buffer instead (36 fewer submits/iter).
                 float batch[8] = {sd[0], sd[1], sd[2], 0, 0, 0, 0, 0};
+                uint32_t lo, hi; float gt;
                 {
                     float cosTheta = computeCosTheta(sd, hc.position, aimPoint);
-                    uint32_t lo, hi; float gt;
                     packGravityParams(cosTheta, lo, hi, gt);
                     std::memcpy(&batch[4], &lo, 4); std::memcpy(&batch[5], &hi, 4); batch[6] = gt;
                 }
@@ -1866,6 +1899,18 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                         (iter == 0) ? 0.0f : m_cfg.lambdaEnergy);
                     boltBackwardPassCmd(pass.cmd);
                     m_app.submitAndWait(pass);
+                    // Phase 5.4 (A3): dump this sun's surface gradient at the
+                    // last iteration (dL/d(y,yu,yv) per grid point).
+                    if (m_cfg.dumpSurfaceGrad > 0 && iter + 1 == m_cfg.iterations) {
+                        std::vector<float> sgBuf(sgGridPts * 3u);
+                        m_app.downloadBuffer(m_surfaceGradient, sgBuf.data(),
+                                             sgBuf.size() * sizeof(float));
+                        sgDump.insert(sgDump.end(), sgBuf.begin(), sgBuf.end());
+                        char metaBuf[128];
+                        snprintf(metaBuf, sizeof(metaBuf), "%zu,%u,%u,%.9g",
+                                 si, lo, hi, (double)gt);
+                        sgMeta.push_back(metaBuf);
+                    }
                     if (iter == 0 && m_cfg.lambdaEnergy > 0.0f) {
                         float st4[4] = {0.0f, 0.0f, 0.0f, 0.0f};
                         m_app.downloadBuffer(m_s95State, st4, sizeof(st4));
@@ -1981,6 +2026,21 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                    result.bestS95, result.initialS95,
                    (result.initialS95 - result.bestS95) / std::max(result.initialS95, 1e-6f) * 100.0f);
         fmt::print("  Time: total={:.1f}s\n", totalTime);
+
+        // Phase 5.4 (A3): write surface-gradient dump
+        if (!sgDump.empty()) {
+            fs::create_directories(m_cfg.outputDir);
+            size_t numSuns = sgMeta.size();
+            std::string binPath = m_cfg.outputDir + "/surface_grad_" + hc.name + ".bin";
+            std::ofstream ofs(binPath, std::ios::binary);
+            ofs.write((char *)sgDump.data(), sgDump.size() * sizeof(float));
+            std::string metaPath = m_cfg.outputDir + "/surface_grad_" + hc.name + "_meta.csv";
+            std::ofstream mfs(metaPath);
+            mfs << "si,lo,hi,gt\n";
+            for (const auto &m : sgMeta) mfs << m << "\n";
+            fmt::print("  Surface-grad dump: {} ({} suns x 3 x {} pts)\n",
+                       binPath, numSuns, sgGridPts);
+        }
         return result;
     }
 
