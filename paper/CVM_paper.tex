@@ -1,0 +1,1322 @@
+% !TeX encoding = utf-8
+% !TeX program = pdflatex
+
+\documentclass{CVM}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{hyperref}
+
+\newcommand{\blu}[1]{\textcolor{blue}{#1}}
+
+\CVMsetup{
+type      = {Research Article},
+doi       = {CVM.XXXX},
+title     = {Cross-Domain Differentiable Monte Carlo Ray Tracing with Embedded
+             Physics Proxies for Heliostat Surface Optimization},
+author    = {First A. Author$^{1}$, Second B. Author$^{2}$, and Third C. Author$^{3}$\\
+\note{}},
+runauthor = {F. A. Author, S. B. Author, T. C. Author},
+abstract  = {
+We present a GPU-native differentiable Monte Carlo ray tracing (DMCRT) system
+that embeds a finite-element-derived thin-plate spline (TPS) proxy model and a
+20-bin nonlinear gravity deformation library directly into the ray tracing
+shaders, enabling the optical loss gradient to back-propagate through both
+refraction optics and mechanical deformation simultaneously. The renderer runs
+entirely on GPU with zero readback per iteration: a collaborative binary search
+computes the S95 spillage threshold on-device, a single Vulkan submit batches
+10+ compute dispatches, and only 4 bytes of scalar loss leave the GPU per
+iteration. Through a systematic investigation of gravity-induced deformation
+mechanisms using this differentiable framework, we design a gradient audit
+methodology that decomposes the deformation field into spectral bands, projects
+each band onto the bolt influence subspace, and quantifies the structurally
+irreducible floor---the fraction of the optical penalty that no bolt adjustment
+strategy can remove under a given support layout. Applied to a 20-mirror
+heliostat field at Delingha (37.36\si{\degree}N, 97.29\si{\degree}E), the
+system reveals that gravity-induced S95 degradation reaches
+1.001$\times$--1.539$\times$ with strong spatial non-uniformity predictable
+from site geometry alone, and that 84--87\% of the correctable gap is
+structurally irreducible under a fixed 35-bolt support layout. Extending the
+optimization variable from bolt strokes to the structural layout itself---by
+making the support edge margin an optimization variable---yields a 26.7\%
+annual S95 reduction with zero additional manufacturing cost. The framework
+transforms heliostat surface design from empirical per-mirror adjustment into a
+bounded, certifiable, and fully automated differentiable workflow.
+},
+keywords  = {differentiable rendering, Monte Carlo ray tracing, physics-based
+             modeling, GPU computing, heliostat optimization, structural-optical co-design},
+copyright = {The Author(s)},
+}
+
+% -- address
+\address{School of XXX, University XXX, City, Post Code, China. E-mail: corresponding@email.cn.}
+
+\begin{document}
+
+\maketitle
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+Differentiable rendering has matured rapidly in computer graphics over the
+past decade, with systems such as Mitsuba~2/3~\cite{mitsuba2,mitsuba3},
+ZeroGrads~\cite{zerograds}, and DiffRP~\cite{diffrp} enabling gradient-based
+optimization of scene parameters through physically-based light transport. The
+core idea---exposing exact or approximate gradients of pixel values with
+respect to scene parameters---has proven transformative for inverse problems in
+appearance modeling, geometry reconstruction, and computational
+design~\cite{jakob2022dr}.
+
+A parallel development is unfolding in concentrating solar power (CSP)
+engineering, where differentiable Monte Carlo ray tracing (DMCRT) has recently
+been applied to heliostat aiming optimization~\cite{aiming2025},
+canting angle optimization~\cite{canting2025}, and in-situ surface
+metrology~\cite{pargmann2024,inverse2025a,inverse2025b}. These works share a
+common characteristic: the surface being rendered is \emph{given}---represented
+either as a fixed geometric primitive, such as an ideal elliptic paraboloid, or
+parameterized by purely optical degrees of freedom (panel tilt angles, focal
+lengths). In all cases, the surface shape is treated as a purely geometric
+entity. The mechanical degrees of freedom that actually \emph{produce} the
+surface shape (support bolt displacements) and the physical loads that
+\emph{distort} it (gravity) have never been connected to the optical objective
+through a differentiable gradient chain.
+
+% ---------------------------------------------------------------------------
+\subsection{Motivation: Why Physics Proxies Matter for Heliostat Optimization}
+% ---------------------------------------------------------------------------
+
+The limitations of purely geometric surface representations become evident when
+examining the physical reality of a heliostat mirror. A large-span thin glass
+mirror ($12.84 \times 9.45$~m, 4~mm thick) supported by discrete bolts sags
+under its own weight by several millimeters, and this deformation field changes
+continuously as the mirror tracks the sun throughout the day and year. The
+resulting slope errors---on the order of several milliradians---are of the same
+magnitude as the sun's intrinsic width ($\sim$2.2~mrad for the Buie model at
+CSR~0.01), meaning that gravity-induced deformation directly competes with the
+optical signal the mirror is designed to concentrate.
+
+Current approaches to modeling surface slope errors in CSP ray tracing fall
+into two categories. The first treats slope error as a spatially uniform
+Gaussian random variable with a single scalar parameter $\sigma_s$, which
+convolves the ideal reflected ray distribution~\cite{hflcal,soltrace}. This
+approach is computationally efficient but cannot capture the spatially
+structured, tilt-angle-dependent deformation patterns produced by gravity. The
+second approach, employed in coupled structural-optical
+optimization~\cite{yan2024,yan2025,yang2022,thalange2017}, uses FEA to compute
+the actual deformed surface, then passes it to a separate ray tracing
+simulation. While physically accurate, the serial, offline nature of this
+coupling restricts optimization to parameter sweeps or black-box evolutionary
+algorithms over a handful of design variables, with each evaluation requiring a
+complete FEA solve plus a complete ray tracing simulation.
+
+Neither approach provides what is needed for gradient-based surface design: a
+physics model that is \emph{accurate enough} to capture the dominant
+deformation modes, \emph{differentiable} to enable gradient-based optimization,
+and \emph{fast enough} to evaluate inside an iterative rendering loop. This is
+the gap that an embedded physics proxy aims to fill.
+
+At the same time, embedding physics into a differentiable renderer raises a
+deeper question: \emph{how do we know whether the embedded physics is actually
+contributing to the optimization, rather than merely existing in the forward
+graph?} The question is not academic---the history of physics-informed machine
+learning contains cases where a physics term in the loss function or the
+forward model was functionally inert, because its gradient contribution was
+numerically dominated by other terms or structurally prevented from reaching
+the design variables. Answering this question requires dedicated analytical
+tools that decompose the physics contribution and quantify what is reachable by
+the optimizer and what is not.
+
+% ---------------------------------------------------------------------------
+\subsection{Research Questions and Contributions}
+% ---------------------------------------------------------------------------
+
+These considerations motivate three research questions that structure this paper:
+
+\begin{itemize}
+  \item \textbf{RQ1 (Magnitude):} What is the real annual optical penalty
+  caused by gravity-induced deformation, and how does it distribute across a
+  heliostat field?
+
+  \item \textbf{RQ2 (Compensability):} For a fixed support structure, what
+  fraction of the gravity penalty is \emph{physically removable} by bolt
+  adjustment---i.e., where is the floor that separates any reachable design
+  from the gravity-free optimum?
+
+  \item \textbf{RQ3 (Structural optimization):} Can we move the floor itself by
+  making structural layout parameters---support margin, bolt density, material
+  thickness---optimization variables, rather than merely compensating within a
+  fixed structure?
+\end{itemize}
+
+To answer these questions, we present a complete GPU-native DMCRT system that
+embeds a finite-element-derived TPS proxy and a 20-bin NLGEOM gravity library
+directly in the ray tracing shaders, enabling end-to-end gradient-based
+optimization across both the optical and mechanical domains. Our contributions are:
+
+\begin{enumerate}
+  \item \textbf{A zero-readback GPU differentiable rendering pipeline} with
+  collaborative on-device S95 threshold search (20 iterations of binary search,
+  single workgroup, only \SI{4}{\byte} of scalar loss read back per
+  iteration), single-submit batching of 10+ compute dispatches, compile-time
+  sunshape specialization, and per-ray pre-culling (\S\ref{sec:system}).
+
+  \item \textbf{A cross-domain gradient chain} that propagates optical loss
+  gradients through double-refraction glass optics \emph{and} a
+  finite-element-derived thin-plate spline (TPS) mechanical proxy, mapping
+  surface flux gradients to 35 independent bolt stroke gradients in a single
+  GPU dispatch sequence (\S\ref{sec:proxy}).
+
+  \item \textbf{A gradient audit methodology} that decomposes the gravity
+  deformation field into affine, quadratic, and higher-order bands, projects
+  each band onto the bolt influence subspace, and quantifies the
+  \emph{structurally irreducible floor}---the fraction of the optical penalty
+  that no bolt adjustment strategy can remove under the given support layout
+  (\S\ref{sec:audit}).
+
+  \item \textbf{A two-level design path} from surface compensation to
+  structural optimization: discovering that 80--90\% of gravity slope energy
+  concentrates in the cantilevered edge flaps (not between bolts), deriving a
+  margin--span conservation law that predicts an interior optimum for the
+  support margin, and achieving a \textbf{26.7\% annual S95 reduction} with
+  zero additional manufacturing cost (\S\ref{sec:structural}).
+
+  \item \textbf{An application case study} on a 20-mirror heliostat field at
+  Delingha, China, providing the first complete gravity penalty map, a
+  geometric tilt-angle distribution model that predicts penalty non-uniformity
+  from site latitude and tower geometry alone, and experimental evidence that
+  grid topology dominates per-bolt position micro-tuning (\S\ref{sec:experiments}).
+\end{enumerate}
+
+% ===========================================================================
+\section{Related Work}
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+\subsection{Differentiable Rendering Systems}
+% ---------------------------------------------------------------------------
+
+The modern differentiable rendering stack was established by Mitsuba~2~\cite{mitsuba2},
+which introduced retargetable automatic differentiation through a symbolic
+computation graph over physically-based light transport. Mitsuba~3~\cite{mitsuba3}
+extended this with GPU-accelerated wavefront differentiable path tracing,
+enabling optimization over object geometry, materials, and lighting at
+practical scales. ZeroGrads~\cite{zerograds} demonstrated that careful
+engineering of the AD overhead can make differentiable rendering competitive
+with forward-only rendering for production assets.
+
+Our system occupies a distinct point in the design space. Rather than
+implementing a general-purpose differentiable renderer with a symbolic
+computation graph, we build a \emph{hardware-specialized} pipeline where the
+entire gradient computation is written in Slang~\cite{slang} with explicit
+\verb|bwd_diff| annotations, compiled to SPIR-V, and dispatched on a single
+Vulkan queue with zero CPU--GPU synchronization within an iteration. This
+design choice trades generality for throughput: each iteration processes
+multiple sun directions (sampled from an annual distribution) in a single
+\verb|vkQueueSubmit| call, with only the final scalar loss value crossing the
+PCIe boundary. The collaborative on-device S95 binary search
+(\S\ref{sec:s95}) eliminates what would otherwise be the dominant readback
+bottleneck.
+
+% ---------------------------------------------------------------------------
+\subsection{Differentiable MCRT in Concentrating Solar Power}
+% ---------------------------------------------------------------------------
+
+Several recent works have applied differentiable ray tracing to CSP problems.
+Pargmann et al.~\cite{pargmann2024} used DMCRT for \emph{in-situ} heliostat
+metrology, reconstructing surface error fields from calibration images.
+Inverse deep learning ray tracing~\cite{inverse2025a,inverse2025b} predicts
+heliostat surfaces from focal spot measurements with sim-to-real transfer.
+Canting optimization via differentiable ray tracing~\cite{canting2025}
+adjusts facet tilt angles to minimize spillage, and aiming optimization via
+DMCRT~\cite{aiming2025} optimizes heliostat pointing strategies at the field
+level.
+
+These works validate that DMCRT gradients are well-behaved and useful in CSP
+optics. However, they all treat the surface as either a given geometric
+primitive or parameterized by purely optical variables (tilt, focal length).
+The mechanical actuators that physically produce the surface (support bolts)
+and the structural loads that physically deform it (gravity) are absent from
+the differentiable graph. Our contribution is to close this loop: bolt
+displacement $\rightarrow$ TPS surface deformation $\rightarrow$ ray tracing
+$\rightarrow$ S95 loss $\rightarrow$ gradient back to bolts, with gravity
+entering both the surface height \emph{and} the normal vectors at every step.
+
+% ---------------------------------------------------------------------------
+\subsection{Physics Proxies in Differentiable Pipelines}
+% ---------------------------------------------------------------------------
+
+The broader trend of embedding physical models into differentiable optimization
+has been termed physics-informed machine learning~\cite{karniadakis2021} and has
+seen applications from structural optimization~\cite{diffopt2024} to wind farm
+digital twins~\cite{ecmwind2023}. The dominant paradigm trains a learned
+surrogate (neural network) to approximate the physical simulator, then
+differentiates through the surrogate. Our approach is different: we use an
+\emph{analytic, hand-derived} proxy (thin-plate splines with a partition-of-unity
+property) whose gradients are exact and whose error budget can be bounded by
+direct comparison with finite-element solutions (\S\ref{sec:proxy_fidelity}).
+This trades the surrogate's flexibility for the proxy's auditability---a choice
+that proves essential for the gradient audit in \S\ref{sec:audit}.
+
+% ---------------------------------------------------------------------------
+\subsection{Coupled Structural-Optical Heliostat Optimization}
+% ---------------------------------------------------------------------------
+
+In the heliostat engineering literature, connecting structural design to optical
+performance has been explored through offline, serial coupling: FEA computes
+the deformed surface, then a separate ray tracing pass evaluates the optical
+consequence~\cite{yan2024,yan2025,yang2022,thalange2017}. These works
+established the important baseline that structural parameters (bolt spacing,
+margin, material) significantly affect optical quality, and that the
+relationship is non-monotonic (an interior optimum exists for bolt spacing).
+However, their serial nature restricts optimization to parameter sweeps or
+black-box evolutionary algorithms over a handful of design variables, with each
+evaluation requiring a complete FEA solve plus a complete ray tracing
+simulation.
+
+Our framework differs in three respects: (i) the gradient chain makes the
+entire system end-to-end differentiable, enabling gradient-based search over
+continuous parameter spaces; (ii) the on-device GPU architecture makes each
+evaluation cheap enough for optimization loops (minutes, not hours); and
+(iii) the differentiability enables \emph{gradient-reachable subspace
+analysis}---answering not just ``which parameter combination is better'' but
+``what is the physical upper bound of any adjustment strategy under this
+layout'' (\S\ref{sec:audit}). Table~\ref{tab:positioning} positions our work
+against the closest prior art.
+
+\begin{table*}[t]
+\centering
+\caption{Positioning against closest prior work.}
+\label{tab:positioning}
+\small
+\begin{tabular}{lp{2.2cm}p{2.5cm}p{2.2cm}p{1.6cm}p{1.8cm}}
+\toprule
+Work & Task & Design variables & Structure model & E2E diff. & Bounds analysis \\
+\midrule
+\cite{aiming2025} & Aiming opt. & 2 DOF/mirror & None & Yes & No \\
+\cite{canting2025} & Canting opt. & Panel tilts & None & Yes & No \\
+\cite{pargmann2024} & In-situ metrology & Surface normals & None & Yes & No \\
+\cite{inverse2025a, inverse2025b} & Surface prediction & Surface coeffs. & None & Neural & No \\
+\cite{yan2024,yan2025} & Support $\rightarrow$ optics & Spacing $d$, count $N$ & FEA (offline) & No & No \\
+\cite{yang2022,thalange2017} & Structural-optical & Structural dims. & FEA + ray trace & No & No \\
+\midrule
+\textbf{This work} & \textbf{Surface design} & \textbf{35 bolt strokes + margin} & \textbf{TPS + 20-bin NLGEOM gravity} & \textbf{Yes} & \textbf{Yes} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% ===========================================================================
+\section{System Architecture}
+\label{sec:system}
+% ===========================================================================
+
+Our differentiable renderer is built on Vulkan compute shaders written in
+Slang~\cite{slang}, which provides automatic differentiation via
+\verb|[Differentiable]| type annotations and \verb|bwd_diff| reverse-mode
+code generation. The key architectural decisions are driven by a single
+constraint: \emph{every optimization iteration must process multiple sun
+directions at interactive rates, with the full gradient chain crossing both
+optical and mechanical domains}.
+
+% ---------------------------------------------------------------------------
+\subsection{Single-Submit Multi-Dispatch Pipeline}
+% ---------------------------------------------------------------------------
+
+The optimization loop iterates over an annual set of sun directions
+$\mathcal{D} = \{(\mathbf{s}_d, \text{DNI}_d)\}_{d=1}^{|\mathcal{D}|}$
+(typically 36--334 directions, \S\ref{sec:sundir}). For each iteration, a
+\emph{single} \verb|vkQueueSubmit| call batches all dispatches for all sun
+directions:
+
+\begin{enumerate}
+  \item \textbf{Mechanical forward} (\verb|computeBoltSurface|, 1 workgroup):
+  TPS influence superposition + 20-bin gravity interpolation $\rightarrow$
+  $32\times32$ surface height field $\mathbf{y}$ and normal field $\mathbf{n}$.
+
+  \item \textbf{Ray tracing forward} (\verb|renderForward|, $k$ tiles
+  $\times$ $\sim$3950 groups): Monte Carlo sampling from receiver pixels to
+  heliostat grid points, double-refraction through \SI{4}{\milli\meter} glass
+  ($n=1.523$), Buie sunshape evaluation, flux accumulation in a $157\times50$
+  receiver image.
+
+  \item \textbf{GPU S95 search} (\verb|computeS95FindLevel|, 1 workgroup):
+  Collaborative binary search for the flux threshold containing 95\% of total
+  energy (\S\ref{sec:s95}).
+
+  \item \textbf{Loss + backward optics} (\verb|computeS95LossBUF| +
+  \verb|renderBackwardBolt|): Sigmoid loss gradient w.r.t.\ flux $\rightarrow$
+  \verb|bwd_diff| through refraction to surface height/normal gradients
+  $\partial L/\partial(y, y_u, y_v)$ per grid point.
+
+  \item \textbf{Mechanical backward} (\verb|reduceSurfaceGradients| +
+  \verb|projectBoltGradients|): Cross-group reduction of fixed-point
+  gradient tiles $\rightarrow$ projection onto bolt gradients
+  $\partial L/\partial h_b$ through TPS influence functions.
+
+  \item \textbf{Adam update} (\verb|boltAdamStep|, 1 workgroup): Tanh-bounded
+  parameter update in unbounded $\varepsilon$-space, with optional
+  regularization terms (anchor, bend, soft stroke wall).
+\end{enumerate}
+
+Table~\ref{tab:dispatch} summarizes the per-iteration GPU dispatches. The key
+engineering property is that \emph{no intermediate buffer is read back to the
+CPU during the optimization loop}: flux images, S95 thresholds, and surface
+gradients all remain device-resident, communicated between dispatches via
+pipeline barriers. Only the final scalar loss (4 bytes, fixed-point
+$\times 10^3$) and per-mirror S95 values cross the PCIe boundary.
+
+\begin{table}[t]
+\centering
+\caption{GPU dispatches per sun direction per iteration (single submit).}
+\label{tab:dispatch}
+\small
+\begin{tabular}{lccc}
+\toprule
+Dispatch & Shader & Grid & Purpose \\
+\midrule
+\verb|computeBoltSurface| & \verb|bolt_forward| & $(1,1,1)$ & Mech.\ forward \\
+\verb|clearFlux| & \verb|forward| & $(1,1,1)$ & Zero flux buffer \\
+\verb|renderForward| & \verb|forward| (A2 typed) & $(k,3950,1)$ & MCRT forward \\
+\verb|finalizeFlux| & \verb|forward| & $(1,1,1)$ & Flux normalization \\
+\verb|computeS95FindLevel| & \verb|s95_gpu| & $(1,1,1)$ & S95 binary search \\
+\verb|computeS95LossBUF| & \verb|s95_gpu| & $(10,4,1)$ & Loss + dL/dflux \\
+\verb|renderBackwardBolt| & \verb|bolt_backward| (A2) & $(3950,k,1)$ & MCRT backward \\
+\verb|reduceSurfaceGradients| & \verb|bolt_backward| & $(1,1,1)$ & Cross-group reduce \\
+\verb|projectBoltGradients| & \verb|bolt_backward| & $(1,1,1)$ & $\rightarrow \partial L/\partial h_b$ \\
+\verb|boltAdamStep| & \verb|bolt_optimizer| & $(1,1,1)$ & Adam update \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+\subsection{GPU-Resident S95 Threshold Search}
+\label{sec:s95}
+% ---------------------------------------------------------------------------
+
+The S95 metric (the area of the smallest contiguous set of receiver pixels
+containing 95\% of intercepted energy~\cite{s95definition}) serves as the
+annual-averaged optical loss. Computing it requires finding a flux threshold
+$\tau^*$ such that $\sum_{p: f_p > \tau^*} f_p = 0.95 \cdot E_{\text{total}}$.
+
+A naive implementation would read back the entire flux image ($157\times50 =
+7{,}850$ floats), sort on the CPU, and perform the binary search---adding
+\SI{\sim30}{\kilo\byte} of PCIe traffic per sun direction per iteration
+($\sim$1.1 MB for 36 suns, $\sim$10 MB for 334 suns, per iteration). We
+instead implement the search entirely on the GPU as a single-workgroup
+collaborative algorithm:
+
+\begin{enumerate}
+  \item \textbf{Energy scan:} Each of 256 threads scans its assigned flux
+  range to compute the group-wide total energy $E_{\text{total}}$ and maximum
+  flux $f_{\max}$, using wave-level reductions.
+
+  \item \textbf{Binary search (20 iterations):} The workgroup maintains a
+  search interval $[f_{\text{lo}}, f_{\text{hi}}]$, initially
+  $[0, f_{\max}]$. Each iteration sets the probe threshold
+  $f_{\text{mid}} = (f_{\text{lo}} + f_{\text{hi}})/2$, then each thread
+  accumulates energy above $f_{\text{mid}}$ within its range. A single
+  \verb|WorkGroupAllReduce| determines whether the accumulated fraction
+  exceeds 0.95, and the interval is halved accordingly.
+
+  \item \textbf{Result:} After 20 iterations, $\tau^*$ is stored to
+  \verb|s95State[0]| (a 4-float device buffer, never read back). The total
+  energy is stored to \verb|s95State[2]| for use by the energy efficiency
+  term (\S\ref{sec:regularization}).
+\end{enumerate}
+
+The 20-iteration depth matches a single-precision float mantissa (23 bits),
+ensuring convergence to floating-point precision. The relative error compared
+to a CPU reference implementation is $\sim 10^{-6}$, limited only by floating-
+point reduction order. An environment variable \verb|BEZIER_S95_GPU=0| can
+restore the CPU readback path for A/B validation.
+
+% ---------------------------------------------------------------------------
+\subsection{Sunshape Specialization and Ray Culling}
+\label{sec:optimizations}
+% ---------------------------------------------------------------------------
+
+Two further engineering optimizations are worth noting:
+
+\textbf{A2 Compile-time sunshape dispatch} (\verb|forward.slang|): Three
+specialized ray tracing entry points (\verb|renderForwardBuie|,
+\verb|renderForwardPillbox|, \verb|renderForwardGaussian|) are produced by
+Slang's generic specialization with a \verb|let SUNSHAPE_TYPE| compile-time
+constant. The C++ dispatcher selects the matching pipeline at runtime based on
+the configuration's \verb|sun_type| field. This eliminates a per-ray branch on
+the sunshape model, which accounts for $\sim$5\% of inner-loop instructions.
+
+\textbf{A1 Per-ray pre-culling} (\verb|ray_cull|, default on): Before
+generating Box-Muller Gaussian samples for the sunshape convolution, each ray
+tests $\cos(\text{reflected\_dir}, \text{sun\_dir}) \geq
+\cos(\theta_{\text{support}} + \delta_{\text{margin}})$, where
+$\theta_{\text{support}} = 0.0436$~rad (Buie cutoff) and
+$\delta_{\text{margin}}$ is a configurable margin (default
+\SI{8}{\milli\radian}). Rays failing this test are marked invalid via a
+bitmask and skipped in both forward and backward passes. At the North
+\SI{300}{\meter} mirror, this reduces total iteration time by \textbf{4.8\%}
+with exact bitwise agreement to the unculled reference.
+
+% ---------------------------------------------------------------------------
+\subsection{Regularization Suite}
+\label{sec:regularization}
+% ---------------------------------------------------------------------------
+
+The total loss function combines the S95 sigmoid loss with optional
+regularization terms, all implemented with analytic gradients in the GPU Adam
+shader:
+
+\begin{equation}
+\mathcal{L}(\mathbf{h}) = \underbrace{\frac{1}{|\mathcal{D}|}\sum_{d} \text{S95}(\mathbf{h}; \mathbf{s}_d)}_{\text{S95 sigmoid}}
++ \lambda_E \underbrace{\left(\frac{E_{\text{ref}}}{E}-1\right)^2}_{\text{energy efficiency}}
++ \lambda_s \underbrace{(\mathbf{h}-\mathbf{h}^*)^\top \mathbf{G} (\mathbf{h}-\mathbf{h}^*)}_{\text{slope-space anchor}}
++ \lambda_b \underbrace{\mathbf{h}^\top \mathbf{K} \mathbf{h}}_{\text{bending energy}}
++ \lambda_h \underbrace{\sum_b \max(|h_b|-h_{\max},\,0)^2}_{\text{soft stroke wall}}
+\label{eq:loss}
+\end{equation}
+
+The bolt heights are parameterized as $h_b = h_{\max} \tanh(\varepsilon_b)$
+(tanh-bounded, L4), with Adam updates performed in the unbounded
+$\varepsilon$-space. The chain-rule factor
+$dh_b/d\varepsilon_b = h_{\max}(1-\tanh^2\varepsilon_b)$ is folded
+into the gradient, and the learning rate is compensated as
+$\text{lr}_\varepsilon = \text{lr} / h_{\max}$ so that the physical step size
+near $\varepsilon=0$ (where $h\approx 0$) matches the lr in both bounded and
+unbounded modes.
+
+The energy efficiency term $\lambda_E$ prevents the optimizer from ``cheating''
+at large slant ranges ($\ge\SI{900}{\meter}$) by spilling most rays off the
+receiver to achieve a spuriously small S95. Setting $\lambda_E \ge 0.5$
+eliminates this behavior while preserving genuine surface improvements
+at short ranges ($\le\SI{600}{\meter}$).
+
+% ===========================================================================
+\section{Physics Proxy and Cross-Domain Gradient Chain}
+\label{sec:proxy}
+% ===========================================================================
+
+The surface model in the plate-local coordinate frame (plate normal = $y$,
+plate plane = $x$--$z$) decomposes the normal displacement field into a
+gravity term and a bolt superposition term:
+
+\begin{equation}
+w(\mathbf{r}; \theta, \mathbf{h}) = w_{\text{grav}}(\mathbf{r}; \theta)
++ \sum_{b=1}^{N_b} h_b \cdot \phi_b(\mathbf{r})
+\label{eq:surface}
+\end{equation}
+
+where $w_{\text{grav}}$ is the zero-bolt pure-gravity displacement from
+NLGEOM finite-element analysis (20 tilt-angle bins, bilinearly interpolated),
+and $\phi_b$ is the unit-displacement influence function of bolt $b$,
+constructed via thin-plate spline (TPS) interpolation.
+
+% ---------------------------------------------------------------------------
+\subsection{TPS Influence Functions}
+% ---------------------------------------------------------------------------
+
+For each bolt $b$, we solve the TPS linear system:
+
+\begin{equation}
+\begin{bmatrix} \mathbf{K} & \mathbf{P} \\ \mathbf{P}^\top & \mathbf{0} \end{bmatrix}
+\begin{bmatrix} \mathbf{c}_b \\ \mathbf{d}_b \end{bmatrix}
+= \begin{bmatrix} \mathbf{e}_b \\ \mathbf{0}_3 \end{bmatrix},
+\quad K_{ij} = r_{ij}^2 \log(r_{ij}^2),\;
+P = [\mathbf{1}, \mathbf{X}, \mathbf{Z}]
+\label{eq:tps}
+\end{equation}
+
+with Tikhonov regularization $\lambda = 10^{-6}$ on the diagonal
+$K_{ii} = \phi(0) + \lambda$. The full-plate response
+$\phi_b(x,z) = \sum_j c_{b,j} \cdot r_j^2\log(r_j^2) + d_{b,0} + d_{b,1}x + d_{b,2}z$
+satisfies the \textbf{partition of unity} property
+$\sum_b \phi_b(\mathbf{r}) \equiv 1$ (peak violation $< 1.3\times 10^{-6}$),
+which guarantees physically correct linear superposition of bolt effects.
+
+The system is $38\times38$ for $N_b=35$ bolts ($35 + 3$ polynomial terms),
+condition number $\sim 4.2\times 10^6$, solved by dense LU in Python ($< 1$~s).
+First-order derivatives are computed analytically:
+
+\begin{equation}
+\frac{\partial\phi_b}{\partial u} = \frac{\partial\phi_b}{\partial x}\cdot W,\quad
+\frac{\partial\phi_b}{\partial v} = \frac{\partial\phi_b}{\partial z}\cdot L
+\label{eq:derivs}
+\end{equation}
+
+where $W=12.84$~m, $L=9.45$~m are the plate dimensions, consistent with the
+shader's tangent-vector convention $\mathbf{t}_u = (W, y_u, 0)$,
+$\mathbf{t}_v = (0, y_v, L)$.
+
+The data are stored as three precomputed $N_b \times 32 \times 32$ float32
+buffers, uploaded once to the GPU and accessed via 128 binding slots.
+
+% ---------------------------------------------------------------------------
+\subsection{Gravity Library: 20-Bin NLGEOM with Normal Coupling}
+% ---------------------------------------------------------------------------
+
+The gravity deformation is obtained from ANSYS MAPDL nonlinear static
+simulations (SHELL181 elements, NLGEOM ON, 20 tilt angles
+$\theta \in \{10\si{\degree}, 14\si{\degree}, \dots, 80\si{\degree}\}$,
+spacing $\le 4\si{\degree}$). The 20-bin density was validated against a
+5-bin prototype: the sparse bins produced systematic slope underestimation at
+off-bin angles (slope correlation dropping to 0.77--0.82), causing a
+``small-spot illusion.'' At 20 bins, the linear interpolation residual is
+negligible (R\textsuperscript{2} $\ge 0.96$, slope correlation $\ge 0.994$).
+
+Each bin stores a \textbf{3-plane format}
+($w$, $\partial w/\partial u$, $\partial w/\partial v$) on the same
+$32\times32$ pixel-centered grid, packed into a single merged buffer of
+$20 \times 3 \times 1024$ floats (\SI{240}{\kilo\byte}). The three-plane
+design is essential: both the height $w$ and its slopes enter the surface
+tangent vectors, so the surface normal becomes
+
+\begin{equation}
+\mathbf{n} = -\text{normalize}\big(
+\mathbf{t}_u \times \mathbf{t}_v\big),\quad
+\mathbf{t}_u = (W,\; y_u^{\text{grav}} + y_u^{\text{bolt}},\; 0),\;
+\mathbf{t}_v = (0,\; y_v^{\text{grav}} + y_v^{\text{bolt}},\; L)
+\label{eq:normal}
+\end{equation}
+
+If only the height were embedded (a 1-plane format), the gravity deformation
+would alter the ray intersection point but not the reflected direction---the
+gravity effect would be invisible to the optical loss at heliostat-to-receiver
+distances. The three-plane embedding ensures that gravity deformation
+contributes to the surface normal and therefore to the optical gradient.
+
+% ---------------------------------------------------------------------------
+\subsection{Gradient Chain: Optical $\rightarrow$ Mechanical}
+% ---------------------------------------------------------------------------
+
+The gradient of the S95 loss with respect to bolt height $h_b$ traces through
+three domains:
+
+\begin{equation}
+\frac{dL}{dh_b} = \sum_{d\in\mathcal{D}}\sum_{p\in\text{pixels}}
+\Bigg[
+\frac{\partial L}{\partial f_p} \cdot \Bigg(
+\underbrace{\frac{\partial f_p}{\partial y} \cdot \phi_b}_{\text{height channel}}
++ \underbrace{\frac{\partial f_p}{\partial y_u} \cdot \frac{\partial \phi_b}{\partial u}}_{\text{$u$-slope channel}}
++ \underbrace{\frac{\partial f_p}{\partial y_v} \cdot \frac{\partial \phi_b}{\partial v}}_{\text{$v$-slope channel}}
+\Bigg)
+\Bigg]
+\label{eq:gradient}
+\end{equation}
+
+The optical partials $\partial f_p / \partial(y, y_u, y_v)$ are computed by
+Slang's \verb|bwd_diff| through the double-refraction ray tracing code in
+\verb|forward.slang|, accumulated per pixel, and stored in a 12~KB
+fixed-point tile ($\times 10^5$ scale, 32-bit unsigned integer, interlocked
+atomic addition). A reduction pass (\verb|reduceSurfaceGradients|) converts
+the tile to a float3 \verb|surfaceGradient| buffer, and the projection pass
+(\verb|projectBoltGradients|) evaluates Eq.~\ref{eq:gradient} using the
+precomputed influence buffers.
+
+This three-stage design (per-pixel fixed-point accumulation $\rightarrow$
+cross-group float reduction $\rightarrow$ bolt projection) is motivated by a
+GPU-specific constraint: \verb|InterlockedAdd| on float is not universally
+available (pre-Vulkan~1.2), and a naive global atomic on the bolt gradient
+would serialize all thread groups. The fixed-point tile trades one integer
+atomic per pixel for one float reduction per sun direction---a \textbf{50$\times$}
+reduction in atomic operations for 7,850 pixels and 35 bolts.
+
+% ---------------------------------------------------------------------------
+\subsection{Proxy Fidelity}
+\label{sec:proxy_fidelity}
+% ---------------------------------------------------------------------------
+
+Table~\ref{tab:proxy_fidelity} summarizes the TPS proxy validation against
+NLGEOM FEA reference solutions. The systematic deviation (RMS 2.0--3.3~mm,
+shape correlation 0.95--0.96) arises because TPS is a purely geometric RBF
+interpolation---it does not encode plate bending stiffness $D$, material
+properties ($E, \nu$), or free-edge boundary conditions. For the differential
+effect $\partial w / \partial h_b$ (which is what the gradient chain uses),
+the proxy accuracy is sufficient, as confirmed by the per-pixel flux NRMSE of
+1.7--1.8\% and correlation $>0.996$ with FEA ray-traced reference spots.
+
+\begin{table}[t]
+\centering
+\caption{TPS proxy vs.\ NLGEOM FEA validation (North \SI{300}{\meter}, 35-bolt optimal).}
+\label{tab:proxy_fidelity}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Angle & RMS (mm) & R\textsuperscript{2} & Shape corr. & Flux corr. \\
+\midrule
+\SI{29.5}{\degree} & 1.94--1.96 & 0.955 & 0.980 & $>0.997$ \\
+\SI{58.5}{\degree} & 2.04--2.05 & 0.952 & 0.980 & $>0.997$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Gradient Audit: Deformation Analysis and Bounds}
+\label{sec:audit}
+% ===========================================================================
+
+With the physics proxy embedded in the differentiable renderer, we can now use
+the framework to answer RQ1 and RQ2: \emph{how large is the gravity penalty,
+what are its physical origins, and how much of it can bolt adjustment actually
+remove?}
+
+% ---------------------------------------------------------------------------
+\subsection{Deformation Decomposition}
+% ---------------------------------------------------------------------------
+
+We decompose the per-angle gravity displacement field $w_{\text{grav}}(\mathbf{r}; \theta)$
+into three spectral bands via least-squares fitting:
+
+\begin{itemize}
+  \item \textbf{Affine} (overall tilt + piston): $w_{\text{affine}} = a_1 x + a_2 z + a_3$.
+  \item \textbf{Quadratic} (focus-like): $w_{\text{quad}} = b_1 x^2 + b_2 z^2 + b_3 xz$.
+  \item \textbf{Higher-order} (inter-support sag): the residual after removing affine
+  and quadratic components.
+\end{itemize}
+
+The affine component is \emph{identically zero} at all angles: the 35 support
+bolts pin the plate's mean plane, so there is no net tilt or piston to
+compensate. This has an important implication: panel-level adjustment methods
+(canting, aiming) that act exclusively on affine degrees of freedom cannot,
+in principle, touch the dominant gravity damage. The quadratic component is
+small (equivalent slope $\le \SI{0.6}{\milli\radian}$). The higher-order
+inter-support sag dominates: \textbf{\SI{6.36}{\milli\radian}} equivalent
+slope at \SI{10}{\degree} tilt, decreasing to \SI{0.92}{\milli\radian} at
+\SI{80}{\degree}.
+
+% ---------------------------------------------------------------------------
+\subsection{Compensability: Projection onto the Bolt Subspace}
+% ---------------------------------------------------------------------------
+
+To determine how much of this deformation can be compensated by bolt
+adjustment, we project the gravity slope field onto the subspace spanned by the
+35 TPS influence functions. The projection is performed in \emph{slope space}
+because the optical consequence is driven by normal errors, not height errors:
+
+\begin{equation}
+\text{removal\_ratio}(\theta) =
+\frac{\|\nabla w_{\text{grav}}\|^2 - \min_{\mathbf{h}}\|\nabla w_{\text{grav}} - \sum_b h_b \nabla\phi_b\|^2}
+{\|\nabla w_{\text{grav}}\|^2}
+\label{eq:removal}
+\end{equation}
+
+The result: TPS influence functions can remove only \textbf{26--38\%} of the
+slope variance of the higher-order sag component. The remaining 62--74\% is
+\textbf{structurally irreducible} under the given 35-bolt (7$\times$5, 8\%
+edge margin) support layout.
+
+% ---------------------------------------------------------------------------
+\subsection{The Bounds Framework}
+% ---------------------------------------------------------------------------
+
+We formalize this into a four-level bounds hierarchy that characterizes the
+optimization landscape:
+
+\begin{itemize}
+  \item \textbf{$B^*$} (gravity-free optimum): S95 of the best surface
+  achievable with gravity disabled---the ultimate lower bound.
+  \item \textbf{$B_{\text{ideal}}$} (gravity-free ideal): S95 of the ideal
+  elliptic paraboloid surface evaluated without gravity.
+  \item \textbf{$B_{\text{comp}}$}: S95 using closed-form slope-space gravity
+  compensation as bolt initialization.
+  \item \textbf{$B_{\text{naive}}$}: S95 of the ideal elliptic surface
+  evaluated with gravity enabled, without any compensation.
+\end{itemize}
+
+Table~\ref{tab:bounds} shows these bounds for the four cardinal mirrors at
+\SI{300}{\meter} from a \SI{300}{\meter} tower (Delingha, 37.36\si{\degree}N).
+The key finding: \textbf{84--87\% of the naive--ideal gap is structurally
+irreducible} for the East, South, and West mirrors. Closed-form compensation
+recovers only 10--14\%; end-to-end optimization adds at most another 3--5\%.
+The floor is a structural property of the support layout, not an artifact of
+the optimization setup.
+
+\begin{table}[t]
+\centering
+\caption{Four-level bounds: S95 (m\textsuperscript{2}) at \SI{300}{\meter},
+36 sun directions.}
+\label{tab:bounds}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Bound & North & East & South & West \\
+\midrule
+$B^*$ (no-gravity opt.\ lower bound) & 49.77 & 65.00 & 73.07 & 64.68 \\
+$B_{\text{ideal}}$ (no-gravity LSQ) & 51.32 & 65.68 & 73.51 & 65.60 \\
+$B_{\text{comp}}$ (closed-form comp.)  & 51.75 & 76.71 & 94.90 & 76.83 \\
+$B_{\text{naive}}$ (LSQ + gravity)    & 51.31 & 77.90 & 98.33 & 78.07 \\
+\midrule
+Struct.\ irreducible (\%) & 37\% & \textbf{86.9\%} & \textbf{84.0\%} & \textbf{86.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+\subsection{Ablation Study: The Floor is Invariant}
+% ---------------------------------------------------------------------------
+
+A nine-group ablation experiment varied five factors simultaneously:
+tanh-bounded vs.\ unbounded parameterization; slope-space anchor strength
+$\lambda_s \in \{0, 10^3, 10^4, 10^5\}$; soft stroke wall on/off; bending
+energy $\lambda_b$ on/off; and initialization (naive vs.\ compensated). The
+result: the East, South, and West mirrors' final S95 values are \textbf{locked
+to 76.2, 94.3, and 76.2~m\textsuperscript{2}} respectively, with a range of
+$\le 0.13$~m\textsuperscript{2} across all nine groups---within Monte Carlo
+noise. The structural floor is invariant to parameterization, regularization
+strength, constraint type, and initialization. This invariance constitutes
+the primary evidence that the floor is a \emph{structural} property of the
+support layout.
+
+% ===========================================================================
+\section{From Surface Compensation to Structural Optimization}
+\label{sec:structural}
+% ===========================================================================
+
+The conclusion that the structural floor is determined by the support layout,
+not by bolt stroke optimization, directly motivates making the layout itself an
+optimization variable.
+
+% ---------------------------------------------------------------------------
+\subsection{The Cantilever Discovery}
+% ---------------------------------------------------------------------------
+
+A density scan tested whether adding more bolts within the same 8\% margin
+could lower the floor: 48 bolts (8$\times$6), 49 bolts (7$\times$7), 63 bolts
+(9$\times$7). The result was unexpected: \textbf{+80\% more bolts (from 35 to
+63) reduced the gravity floor by only 4.2\%}. Two competing plate-theory models
+(max-span\textsuperscript{4} and Navier simply-supported) both predicted
+substantially larger reductions, and were simultaneously falsified.
+
+Spatial partitioning of the slope energy revealed the cause: \textbf{80--91\%}
+of the gravity slope energy (across all angles) is concentrated in the
+\emph{cantilevered edge flaps}---the region outside the outermost bolt row---not
+in the inter-bolt bays that additional bolts would subdivide. The cantilever
+is an unsupported free edge, and its deformation scales as $w \propto a^4$
+(where $a$ is the overhang distance) in thin-plate theory.
+
+% ---------------------------------------------------------------------------
+\subsection{The Margin--Span Conservation Law}
+% ---------------------------------------------------------------------------
+
+Reducing the edge margin $m$ (the distance from the outermost bolt row to the
+plate edge, as a fraction of the half-width/half-length) simultaneously:
+
+\begin{itemize}
+  \item \textbf{Reduces} the cantilever overhang $\propto m$, lowering the
+  flap deformation $\propto m^3$;
+  \item \textbf{Increases} the inter-bolt span (for a fixed number of bolts),
+  raising the bay deformation $\propto (1-m)^3$.
+\end{itemize}
+
+The opposing scaling implies an \textbf{interior optimum} for the margin at a
+given bolt density. This ``margin--span conservation law'' predicts that
+margin optimization can reduce the gravity floor \emph{with zero additional
+bolts}---a free structural dividend.
+
+% ---------------------------------------------------------------------------
+\subsection{Margin Optimization Results}
+% ---------------------------------------------------------------------------
+
+To test this prediction, we scanned the margin across five values
+$m \in \{0.08, 0.06, 0.05, 0.04, 0.03\}$ by regenerating the ANSYS gravity
+bins at each margin and running the end-to-end optimization pipeline (100
+iterations, 110 sun directions, four mirrors). The gravity field for each
+margin was obtained from fresh NLGEOM FEA solves with fine substeps
+(\verb|NSUBST 50,500,50|) to ensure quasi-static smooth branch following.
+
+The optimum occurs at $m^* = 0.04$--$0.05$, with point estimate $m^* = 0.05$.
+At 334 sun directions, the annual-averaged S95 for the four \SI{300}{\meter}
+mirrors totals:
+
+\begin{equation}
+\text{S95}_{\text{total}}(m{=}0.05) = 281.7\text{ m}^2 \quad\text{vs.}\quad
+\text{S95}_{\text{total}}(m{=}0.08) = 384.2\text{ m}^2
+\label{eq:final}
+\end{equation}
+
+a \textbf{26.7\% reduction} achieved purely by moving the bolt rows closer to
+the plate edges---no additional bolts, no material change, no manufacturing
+cost increase.
+
+\begin{table}[t]
+\centering
+\caption{Margin optimization: per-mirror annual S95 (m\textsuperscript{2}),
+334 sun directions.}
+\label{tab:margin}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Margin & North & East & South & West & Total \\
+\midrule
+0.08 (baseline) & 72.75 & 101.59 & 116.57 & 93.28 & 384.2 \\
+0.05 (optimal)  & 54.06 &  73.23 &  81.28 & 73.09 & \textbf{281.7} \\
+\midrule
+Dividend (\%)    & $-$25.7 & $-$27.9 & $-$30.3 & $-$21.6 & \textbf{$-$26.7} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------------
+\subsection{Methodological Note: NLGEOM Substep Requirements}
+\label{sec:substep}
+% ---------------------------------------------------------------------------
+
+During this investigation, we encountered a systematic artifact in per-angle
+independent NLGEOM solves with coarse substeps (ANSYS \verb|NSUBST 1,10,1|).
+At tilt angles near \SI{46}{\degree}, the snap-through bistability of the thin
+plate causes the independent cold-start solve to randomly select one of two
+stable branches. This produces gravity bins with \emph{sign-flipped}
+deformation fields at high tilt angles, rendering entire margin-scan results
+invalid. The issue was resolved by using fine substeps
+(\verb|NSUBST 50,500,50|) to guarantee quasi-static smooth branch following,
+which shifted the point estimate from $m^*{=}0.04$ to $m^*{=}0.05$. This
+finding constitutes a methodological contribution: \emph{any multi-angle
+parameterized model relying on per-angle independent FEA solves must verify
+branch continuity with fine substeps or numerical continuation.}
+
+% ===========================================================================
+\section{Experiments}
+\label{sec:experiments}
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+\subsection{Experimental Setup}
+% ---------------------------------------------------------------------------
+
+\begin{itemize}
+  \item \textbf{Hardware:} NVIDIA RTX 4070 SUPER 12~GB (desktop), RTX 4060
+  8~GB (laptop). Vulkan~1.3, Slang compiler.
+  \item \textbf{Heliostat:} $12.84 \times 9.45$~m glass mirror, thickness
+  \SI{4}{\milli\meter}, $n=1.523$, 35 support bolts (7$\times$5, margin 8\%
+  unless otherwise noted). Plate bending stiffness $D=392$~N$\cdot$m, gravity
+  load $q=98.1$~N/m\textsuperscript{2}.
+  \item \textbf{Receiver:} Cylindrical, radius \SI{10}{\meter}, height
+  \SI{20}{\meter}, discretized at $157\times50$ pixels.
+  \item \textbf{Sun model:} Buie~\cite{buie2003} CSR$=0.01$, DNI$=1000$~W/m\textsuperscript{2},
+  slope error $\sigma_s = 1$~mrad.
+  \item \textbf{Sun directions:} 36 directions for fast iteration, 110
+  (paper-minimal), 334 (balanced annual), all symmetric about true solar noon
+  (azimuth$=180\si{\degree}$, eliminating the equation-of-time asymmetry).
+  \item \textbf{Optimizer:} Adam ($\beta_1{=}0.9$, $\beta_2{=}0.999$),
+  learning rate $4\times10^{-4}$ constant, 100--200 iterations.
+  \item \textbf{Site:} Delingha, Qinghai, China (37.36\si{\degree}N,
+  97.29\si{\degree}E), tower height \SI{300}{\meter}.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\subsection{RQ1: The Real Gravity Penalty Map}
+\label{sec:exp_rq1}
+% ---------------------------------------------------------------------------
+
+Figure~\ref{fig:penalty} shows the annual S95 inflation ratio
+$\text{S95}_{\text{naive}} / \text{S95}_{\text{ideal}}$ across 20 mirrors
+(five slant ranges 150/300/600/900/1200~m $\times$ four cardinal directions
+N/E/S/W, 334 sun directions). The gravity penalty is \textbf{spatially
+strongly non-uniform}: North mirrors are nearly immune across all distances
+(ratio 1.001--1.02$\times$), while the worst case is the South~\SI{150}{\meter}
+mirror at 1.539$\times$.
+
+\begin{figure}[t]
+\centering
+% \includegraphics[width=\linewidth]{fig_penalty_map}
+\caption{Annual gravity penalty map: S95 inflation ratio across 20 mirrors
+(334 sun directions). North mirrors are nearly immune; South near-field is
+the worst case at 1.539$\times$.}
+\label{fig:penalty}
+\end{figure}
+
+The non-uniformity has a purely geometric explanation. The annual tilt angle
+$\theta$ (angle between plate normal and vertical) distribution for each
+mirror position is determined by site latitude, tower geometry, and mirror
+coordinates alone---no optical simulation required. At Delingha's latitude:
+
+\begin{itemize}
+  \item \textbf{North \SI{300}{\meter}}: $\theta \in [36\si{\degree}, 65\si{\degree}]$,
+  median $51\si{\degree}$. 35\% of annual time falls in the 40--50\si{\degree}
+  band, near the $\sim$46\si{\degree} NLGEOM zero-crossing where the
+  gravity-induced sag is minimal.
+  \item \textbf{South \SI{300}{\meter}}: $\theta \in [0\si{\degree}, 57\si{\degree}]$,
+  with 24\% of time at $\theta < 20\si{\degree}$, where the gravity bending
+  moment $q\cos\theta$ is maximal.
+  \item \textbf{East/West \SI{300}{\meter}}: cross the 46\si{\degree} sign-change
+  point, carrying an irreducible $\theta$-variation component of
+  2.5--2.9~mrad that no fixed bolt setting can compensate.
+\end{itemize}
+
+This tilt-angle distribution model predicts the measured penalty map with
+Pearson $r = 0.913$ (Spearman $\rho = 0.922$), transforming the empirical
+observation into a \textbf{design rule}: which heliostats in a field are worth
+structural compensation can be determined from latitude and tower geometry
+alone.
+
+% ---------------------------------------------------------------------------
+\subsection{RQ2: The Irreducible Floor}
+% ---------------------------------------------------------------------------
+
+\S\ref{sec:audit} presented the quantitative bounds. Here we highlight the
+experimental evidence for the floor's invariance. The nine-group ablation
+(Table~\ref{tab:bounds}) showed that the East, South, and West mirrors' final
+S95 is locked to $\sim$76.2, 94.3, and 76.2~m\textsuperscript{2} respectively,
+with range $\le 0.13$~m\textsuperscript{2}. Neither the parameterization
+(bounded vs.\ unbounded), nor regularization strength (0--$10^5$), nor
+initialization (naive vs.\ compensated) could move the East/West mirrors below
+76.2 or the South mirror below 94.3.
+
+\textbf{The path forward is structural.} With fixed $N_b = 35$ and fixed
+margin $m = 8\%$, bolt stroke adjustment---however sophisticated---can recover
+at most $\sim$13--16\% of the gravity penalty. The remaining 84--87\% requires
+changing the support layout itself.
+
+% ---------------------------------------------------------------------------
+\subsection{RQ3: Structural Optimization}
+% ---------------------------------------------------------------------------
+
+\S\ref{sec:structural} detailed the margin optimization. Here we supplement
+two additional structural findings.
+
+\textbf{Bolt density at optimal margin.} At the optimal margin $m^*{=}0.05$,
+a density scan across layouts 7$\times$5 (35), 9$\times$7 (63), 9$\times$8 (72),
+and 11$\times$9 (99 bolts) reveals that 9$\times$7 (63 bolts, +80\%) reduces
+S95 by a further 10--14\% beyond the margin dividend. However, 11$\times$9 (99
+bolts, +183\%) shows \emph{degradation} on East and West mirrors---the
+excessive degrees of freedom cause the optimizer to fall into inferior local
+minima. The sweet spot emerges as a ``density $\times$ aspect-ratio'' surface
+with 10$\times$7 (70 bolts) producing the overall best results.
+
+\textbf{Position--height joint optimization.} To test whether per-bolt position
+freedom beyond uniform grids could yield further gains, we implemented TPS
+adjoint position sensitivity and a bold top-K step-ladder protocol. The result:
+across four initial grid topologies and two mirror orientations, per-bolt
+position moves of only 1--3~cm (from step sizes up to 30~cm offered) produce
+S95 improvements of \textbf{0.5--0.9\%} before hitting a wall. \textbf{Grid
+topology choice dominates position micro-tuning.} No asymmetric layouts
+emerged, confirming that the uniform-grid optimum is near-global under per-bolt
+freedom.
+
+% ---------------------------------------------------------------------------
+\subsection{Timing and Scalability}
+% ---------------------------------------------------------------------------
+
+Table~\ref{tab:timing} reports per-iteration timing. The dominant cost is the
+ray tracing forward and backward passes, which scale with pixel count
+($157\times50 = 7{,}850$) and sun direction count. The S95 search and
+mechanical passes are negligible ($<1$~ms each). A 200-iteration optimization
+with 36 sun directions completes in $\sim$7 minutes for a single mirror and
+$\sim$20 minutes for four mirrors.
+
+\begin{table}[t]
+\centering
+\caption{Per-iteration timing breakdown (RTX 4060 Laptop, 36 sun directions,
+single mirror).}
+\label{tab:timing}
+\small
+\begin{tabular}{lr}
+\toprule
+Stage & Time (ms) \\
+\midrule
+Mechanical forward (surface build) & 0.3 \\
+Ray tracing forward (per sun) & 18.2 \\
+S95 binary search & 0.1 \\
+Loss + ray tracing backward (per sun) & 26.5 \\
+Mechanical backward (reduce + project) & 0.5 \\
+Adam update & $<0.1$ \\
+\midrule
+\textbf{Total per sun} & \textbf{45.6} \\
+\textbf{Total per iteration (36 suns)} & \textbf{1,640} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{Discussion}
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+\subsection{What Did the Physics Proxy Actually Do?}
+% ---------------------------------------------------------------------------
+
+The central question motivating this work---what does embedding a physics proxy
+into a differentiable renderer actually achieve?---can now be answered with
+quantitative evidence:
+
+\begin{enumerate}
+  \item \textbf{Diagnostic role:} The proxy enabled the gradient audit
+  methodology that certified the structural floor and proved its invariance to
+  all optimizer and regularization choices. The finding that ``84--87\% of the
+  gap is structural'' was independently verified by FEA spot-checks.
+
+  \item \textbf{Engineering role:} The proxy carried the deformation field
+  through the differentiable loop fast enough to make structural optimization
+  practical---replacing per-iteration FEA solves (\SI{3}{\minute} each) with
+  GPU-resident $\mu$s evaluations.
+
+  \item \textbf{Explanatory role:} The proxy translated the empirical
+  observation ``bolt density shows diminishing returns''~\cite{yan2024,yan2025}
+  into a mechanical mechanism---the cantilever-dominant slope energy that the
+  margin--span conservation law formalizes.
+\end{enumerate}
+
+The proxy's real value lies not in per-mirror compensation (where it can only
+recover 13--16\%), but in \emph{driving structural design decisions} (where the
+margin dividend of 26.7\% dwarfs the compensation ceiling).
+
+% ---------------------------------------------------------------------------
+\subsection{Limitations}
+% ---------------------------------------------------------------------------
+
+\textbf{TPS linearity.} The TPS proxy assumes linear superposition of bolt
+effects, which the NLGEOM FEA validates with shape correlation 0.95--0.96.
+Residual nonlinearity limits the proxy's accuracy for absolute deformation
+prediction but is adequate for the differential effect $\partial w/\partial
+h_b$ used in gradient computation.
+
+\textbf{Single-site, single-load.} Our experiments consider one site
+(Delingha) and one dominant load (gravity). Wind-induced deformation, thermal
+gradients, and manufacturing tolerances are not modeled. Incorporating these
+loads into the differentiable pipeline would require additional FEA
+simulations but no architectural changes.
+
+\textbf{Steel vs.\ glass.} Real heliostats use steel-backed glass modules
+(Kesheng~V3: \SI{5}{\milli\meter} steel, rail spacing \SI{0.37}{\meter}).
+We verified via FEA that steel and glass produce near-identical deformation
+shapes (cosine similarity $>0.996$) with a pure-scaling factor $\alpha \approx
+1.01$, meaning the structural conclusions (margin optimum, density surface)
+transfer qualitatively. However, the rail-stiffened floor is $\sim$500$\times$
+stiffer than the bare plate, so the absolute S95 numbers require recalibration
+for production hardware.
+
+% ---------------------------------------------------------------------------
+\subsection{Extensions}
+% ---------------------------------------------------------------------------
+
+\textbf{Full-field scaling.} The per-mirror S95 results can be converted to
+annual field-level energy yield by convolving with the mirror population
+distribution and a receiver efficiency model.
+
+\textbf{Aiming co-optimization.} Joint optimization of bolt strokes and
+per-mirror aiming points (2 additional DOF per mirror) would close the last
+open loop in the optical chain.
+
+\textbf{Branch engineering.} The NLGEOM bistability at $\sim$46\si{\degree}
+(\S\ref{sec:substep}) is currently treated as an artifact to be avoided.
+However, the flipped branch is \emph{optically better} (lower gravity sag) at
+high tilt angles. Exploiting this bistability through controlled snap-through
+actuation is a speculative but potentially high-impact extension.
+
+% ===========================================================================
+\section{Conclusion}
+% ===========================================================================
+
+We have presented a GPU-native differentiable Monte Carlo ray tracing system
+that embeds finite-element-derived physics proxies to enable end-to-end
+gradient-based optimization of heliostat surfaces across structural and optical
+domains. Three main findings structure the work:
+
+\begin{enumerate}
+  \item \textbf{The gravity penalty is real, large, and predictable.}
+  Gravity-induced S95 inflation reaches 1.539$\times$ in the worst case and
+  is strongly non-uniform across the field. The non-uniformity can be
+  predicted from site geometry alone, transforming an empirical observation
+  into a design rule.
+
+  \item \textbf{The structural floor can be bounded and certified.} Under a
+  fixed 35-bolt layout, only 26--38\% of the gravity slope variance is
+  reachable by bolt adjustment; 84--87\% of the optical penalty is
+  structurally irreducible. This floor is invariant to optimizer,
+  regularization, and initialization---a gradient audit methodology with
+  applicability to physics-embedded differentiable systems.
+
+  \item \textbf{The floor can be moved by structural optimization.}
+  Discovering that 80--90\% of gravity energy concentrates in cantilevered
+  edges leads to a margin--span conservation law and a zero-cost 26.7\%
+  S95 reduction through margin optimization alone, verified by full ANSYS
+  truth re-solve.
+\end{enumerate}
+
+The framework transforms gravity compensation from an empirical,
+per-mirror adjustment process into a bounded, certifiable, and fully automated
+design workflow. The gradient audit methodology---decomposing a physics proxy's
+contribution into reachable and irreducible subspaces---is not specific to
+heliostats and may serve as a template for other domains where physical
+proxies are embedded in differentiable rendering pipelines.
+
+\appendix
+
+\subsection*{Appendix A: ANSYS Automation and Coordinate Conventions}
+
+The ANSYS MAPDL batch pipeline automates per-angle NLGEOM static solves with
+SHELL181 shell elements and 35 bolt-node translation constraints. The plate
+local coordinate system is defined by the plate normal
+$(0, \cos\theta, +\sin\theta)$ in global coordinates, with the displacement
+extraction $w = u_y \cos\theta + u_z \sin\theta$.
+
+\subsection*{Appendix B: Sun Direction Sampling}
+
+Sun directions are generated symmetric about \emph{true} solar noon
+(azimuth $= 180\si{\degree}$), eliminating the equation-of-time asymmetry that
+would bias morning/afternoon sampling in mean-solar-noon schemes. Three
+presets are available: \verb|paper| (12 months $\times$ 1 day $\times$ 13
+hours, $\sim$110 directions), \verb|balanced| (12 $\times$ 3 $\times$ 13,
+$\sim$334 directions), and \verb|dense| (12 $\times$ 14 $\times$ 13,
+$\sim$1,556 directions).
+
+\subsection*{Availability of data and materials}
+
+The source code and pre-generated proxy data are available at
+\url{https://github.com/xxx/bezier_opt_desktop}. The ANSYS FEA pipeline
+requires a commercial ANSYS MAPDL license; pre-generated gravity bins are
+included in the repository.
+
+\subsection*{Author contributions}
+
+All authors contributed to the system design, experiments, and manuscript
+preparation. All authors have approved the final manuscript.
+
+\subsection*{Acknowledgements}
+
+This work was supported by [TODO: funding information].
+
+\subsection*{Declaration of competing interest}
+
+The authors have no competing interests to declare that are relevant to the
+content of this article.
+
+\begin{thebibliography}{99}
+
+\bibitem{mitsuba2}
+Nimier-David, M.; Vicini, D.; Zeltner, T.; Jakob, W.
+Mitsuba 2: A retargetable forward and inverse renderer.
+\textit{ACM Transactions on Graphics} Vol. 38, No. 6, Article No. 203, 2019.
+
+\bibitem{mitsuba3}
+Jakob, W.; Speierer, S.; Roussel, N.; Nimier-David, M.; Vicini, D.;
+Zeltner, T.; Nicolet, B.; Crespo, M.; Leroy, V.; Zhang, Z.
+Mitsuba 3 renderer, 2022. Available at \url{https://mitsuba-renderer.org}.
+
+\bibitem{zerograds}
+Yan, Y.; Zhang, Z.; Jakob, W.
+ZeroGrads: Learned optimization of production assets via differentiable
+rendering. \textit{ACM Transactions on Graphics} Vol. 43, No. 4, 2024.
+
+\bibitem{diffrp}
+Zhou, K.; Chen, W.; Yu, J.
+Computational caustic design for surface light sources.
+\textit{IEEE Transactions on Visualization and Computer Graphics}
+Vol. 32, No. 2, 2026.
+
+\bibitem{jakob2022dr}
+Jakob, W.
+Differentiable rendering. In: \textit{ACM SIGGRAPH 2022 Courses}, 2022.
+
+\bibitem{slang}
+He, Y.; Foley, T.; Tatarchuk, N.; Fatahalian, K.
+Slang: A language for real-time GPU shading and differentiation.
+\textit{ACM Transactions on Graphics} Vol. 41, No. 6, 2023.
+
+\bibitem{aiming2025}
+(TBC) A novel heliostat aiming optimization framework via differentiable
+Monte Carlo ray tracing for solar power tower.
+\textit{Applied Energy}, 2025.
+
+\bibitem{canting2025}
+(TBC) The optimization of heliostat paraboloid canting via differentiable
+ray tracing. \textit{Solar Energy}, 2025.
+
+\bibitem{pargmann2024}
+Pargmann, M.; Ertl, J.; Kesselheim, S.; G\"ottsche, J.; Schorn, C.;
+Klink, S.
+Automatic heliostat learning for in situ concentrating solar power plant
+metrology with differentiable ray tracing.
+\textit{Nature Communications} Vol. 15, Article No. 6997, 2024.
+
+\bibitem{inverse2025a}
+(TBC) Inverse deep learning raytracing for heliostat surface prediction.
+\textit{Solar Energy}, 2025.
+
+\bibitem{inverse2025b}
+(TBC) Scalable heliostat surface predictions from focal spots: Sim-to-Real
+transfer of inverse deep learning raytracing.
+\textit{Solar Energy}, 2025.
+
+\bibitem{karniadakis2021}
+Karniadakis, G. E.; Kevrekidis, I. G.; Lu, L.; Perdikaris, P.;
+Wang, S.; Yang, L.
+Physics-informed machine learning.
+\textit{Nature Reviews Physics} Vol. 3, 422--440, 2021.
+
+\bibitem{diffopt2024}
+(TBC) Differentiable automatic structural optimization using graph deep
+learning. \textit{Advanced Engineering Informatics}, 2024.
+
+\bibitem{ecmwind2023}
+(TBC) Digital twin of wind farms via physics-informed deep learning.
+\textit{Energy Conversion and Management}, 2023.
+
+\bibitem{yan2024}
+Li, B.; Yan, J.; Zhou, W.; Peng, Y.
+Influence of service load and structural parameters on optical accuracy
+of solar tower heliostat (in Chinese).
+\textit{Acta Optica Sinica} Vol. 44, No. 6, Article No. 0623001, 2024.
+
+\bibitem{yan2025}
+Yan, J.; Song, T.; Peng, Y.; Zhou, W.
+Optical accuracy study of pentagonal tower solar heliostat based on
+support bolt jacking molding (in Chinese).
+\textit{Acta Optica Sinica} Vol. 45, No. 6, Article No. 0608001, 2025.
+
+\bibitem{yang2022}
+Yang, (TBC) et al.
+A coupled structural-optical analysis of a novel umbrella heliostat.
+\textit{Solar Energy}, 2022.
+
+\bibitem{thalange2017}
+Thalange, (TBC) et al.
+Design, optimization and optical performance study of tripod heliostat
+for solar power tower plant.
+\textit{Energy} Vol. 135, 610--624, 2017.
+
+\bibitem{buie2003}
+Buie, D.; Monger, A. G.; Dey, C. J.
+Sunshape distributions for terrestrial solar simulations.
+\textit{Solar Energy} Vol. 74, No. 2, 113--122, 2003.
+
+\bibitem{s95definition}
+Collado, F. J.; Guallar, J.
+A review of optimized design layouts for solar power tower plants with
+Campo code. \textit{Renewable and Sustainable Energy Reviews}
+Vol. 20, 142--154, 2013.
+
+\bibitem{fastncm2026}
+Lin, R.; (TBC) et al.
+Real-time radiative flux density distribution simulation via data-driven
+neural convolution model (Fast-NCM). Preprint, 2026.
+
+\bibitem{hflcal}
+Ho, C. K.; Khalsa, S. S.
+A flux density distribution model based on convolution of Gaussian and
+error functions (HFLCAL). \textit{Journal of Solar Energy Engineering}
+Vol. 134, No. 1, 2012.
+
+\bibitem{soltrace}
+Wendelin, T.
+SolTRACE: A new optical modeling tool for concentrating solar optics.
+In: \textit{Proceedings of the ASME International Solar Energy Conference},
+2003.
+
+\bibitem{tonatiuh}
+Blanco, M. J.; et al.
+Tonatiuh: An open source Monte Carlo ray tracer for solar concentrating
+systems. \textit{Solar Energy}, 2010.
+
+\bibitem{kesheng}
+(TBC) Kesheng V3 heliostat specifications. Private communication, 2026.
+
+\end{thebibliography}
+
+\subsection*{Author biography}
+
+\begin{biography}[author1]{First A. Author}
+[TODO: author photo and biography]
+\end{biography}
+
+\end{document}

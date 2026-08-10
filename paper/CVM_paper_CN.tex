@@ -1,0 +1,563 @@
+% !TeX encoding = utf-8
+% !TeX program = xelatex
+
+\documentclass[12pt,a4paper]{ctexart}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+\title{\textbf{嵌入物理代理的跨域可微蒙特卡洛光线追踪\\及其在定日镜面型优化中的应用}}
+\author{作者一$^{1}$，作者二$^{2}$，作者三$^{3}$}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+本文提出一个 GPU 原生可微蒙特卡洛光线追踪（DMCRT）系统，将有限元衍生的薄板样条（TPS）代理模型和 20 仓非线性重力形变库直接嵌入光线追踪着色器，使光学损失梯度同时反穿折射光学和机械形变两个物理域。渲染器完全在 GPU 端运行，每迭代零回读：协作二分搜索在设备端计算 S95 溢光阈值，单次 Vulkan 提交批量执行 10 余个计算 Dispatch，每迭代仅 4 字节标量损失离开 GPU。利用该可微框架对重力诱导形变机理进行系统探究，我们设计了梯度审计方法论：将形变场分解为频谱带、将各频带投影至螺栓影响子空间，量化\emph{结构性不可约地板}——即在给定支撑布局下任何螺栓调节策略都无法消除的光学惩罚比例。在德令哈（北纬 37.36°，东经 97.29°）20 面定日镜镜场上的应用表明：重力导致的 S95 退化达 1.001$\times$--1.539$\times$，其空间非均匀性可由场址几何独立预测；在固定 35 螺栓支撑布局下，可校正差距的 84--87\% 为结构性不可约。将优化变量从螺栓行程扩展到结构布局本身——使支撑边距成为优化变量——以零额外制造成本实现了\textbf{年均 S95 降低 26.7\%}。该框架将定日镜面型设计从经验性逐镜调节转变为一种有界、可认证、完全自动化的可微设计流程。
+\end{abstract}
+
+\noindent\textbf{关键词：}可微渲染；蒙特卡洛光线追踪；物理建模；GPU 计算；定日镜优化；结构--光学协同设计
+
+% ===========================================================================
+\section{引言}
+% ===========================================================================
+
+过去十年中，可微渲染在计算机图形学领域迅速成熟。以 Mitsuba~2/3~\cite{mitsuba2,mitsuba3}、
+ZeroGrads~\cite{zerograds} 和 DiffRP~\cite{diffrp} 为代表的系统，使基于梯度的场景参数优化能够穿越基于物理的光传输。
+该技术在聚光太阳能热发电（CSP）工程领域也取得了进展：可微蒙特卡洛光线追踪（DMCRT）近期被应用于定日镜瞄准优化~\cite{aiming2025}、
+canting 角度优化~\cite{canting2025} 以及原位表面计量~\cite{pargmann2024,inverse2025a,inverse2025b}。
+这些工作有一个共同特征：被渲染的表面被当作\emph{给定的}几何实体——表示为固定几何基元（如理想椭圆抛物面）或由纯光学自由度（面板倾角、焦距）参数化。
+而真正\emph{产生}表面形状的机械自由度（支撑螺栓位移）和真正\emph{扭曲}表面的物理载荷（重力），从未通过可微梯度链连接到光学目标。
+
+% ---------------------------------------------------------------------------
+\subsection{动机：为何物理代理对定日镜优化至关重要}
+% ---------------------------------------------------------------------------
+
+纯几何表面表示的局限性在审视定日镜的物理现实时显而易见。一块由离散螺栓支撑的大跨度薄玻璃镜（$12.84 \times 9.45$~m，厚 4~mm）在自重下沉陷达数毫米，且该形变场随镜面在日内、年内跟踪太阳而连续变化。由此产生的斜率误差——量级为数毫弧度——与太阳固有宽度（Buie 模型 CSR$=0.01$ 时约 2.2~mrad）处于同一量级，意味着重力诱导形变直接与镜面欲聚焦的光学信号竞争。
+
+当前 CSP 光线追踪中对镜面斜率误差的建模方法可分为两类。第一类将斜率误差视为空间均匀的高斯随机变量，以单一标量参数 $\sigma_s$ 卷积理想反射光线分布~\cite{hflcal,soltrace}。该方法计算效率高，但无法捕捉重力产生的空间结构化、倾角依赖的形变模式。第二类方法见于耦合结构--光学优化~\cite{yan2024,yan2025,yang2022,thalange2017}，使用有限元分析计算实际变形表面，然后传递至独立的光线追踪仿真。虽然物理上精确，但这种串行的、离线的耦合方式将优化限制为参数扫描或黑箱进化算法，每次评估需要完整的 FEA 求解加完整的光线追踪仿真。
+
+两种方法均无法为基于梯度的面型设计提供所需条件：一个\emph{足够精确}以捕捉主导形变模态、\emph{可微}以支持梯度优化、且\emph{足够快速}以嵌入迭代渲染循环的物理模型。这正是嵌入式物理代理要填补的空白。
+
+同时，将物理嵌入可微渲染器提出了一个更深层的问题：\emph{如何知道嵌入的物理是否真正在贡献优化，而非仅存在于前向图中？}这一问题并非纯学术——物理信息机器学习的历史中存在案例表明，损失函数或前向模型中的物理项在功能上是惰性的，因其梯度贡献被其他项数值主导或在结构上无法抵达设计变量。回答该问题需要专门的分析工具来分解物理贡献，量化什么是优化器可达的、什么是不可达的。
+
+% ---------------------------------------------------------------------------
+\subsection{研究问题与贡献}
+% ---------------------------------------------------------------------------
+
+上述考量催生了三个研究问题，构成了本文的结构主线：
+
+\begin{itemize}
+  \item \textbf{RQ1（量级）：}重力诱导形变导致的真实年度光学惩罚有多大？它在镜场中如何分布？
+  \item \textbf{RQ2（可补偿性）：}对固定支撑结构，重力惩罚中有多大比例在物理上可被螺栓调节消除——即，将任何可达设计与无重力最优隔开的地板在哪里？
+  \item \textbf{RQ3（结构优化）：}能否通过将结构布局参数——支撑边距、螺栓密度、材料厚度——变为优化变量来移动地板本身，而非仅在固定结构内补偿？
+\end{itemize}
+
+为回答这些问题，我们提出了完整的 GPU 原生 DMCRT 系统，将有限元衍生的 TPS 代理和 20-bin NLGEOM 重力库直接嵌入光线追踪着色器，实现穿越光学和机械域的端到端梯度优化。本文贡献如下：
+
+\begin{enumerate}
+  \item \textbf{零回读 GPU 可微渲染管线}：具备 GPU 端协作 S95 阈值搜索（20 轮二分搜索，单工作组，每迭代仅回读 4 字节标量损失）、单次提交批量执行 10 余个计算 Dispatch、编译期太阳形状特化、逐光线预裁剪等功能（\S\ref{sec:system}）。
+
+  \item \textbf{跨域梯度链}：光学损失梯度穿过双折射玻璃光学\emph{和}有限元衍生的薄板样条（TPS）机械代理，将表面能流梯度映射为 35 个独立螺栓行程梯度，在单次 GPU Dispatch 序列中完成（\S\ref{sec:proxy}）。
+
+  \item \textbf{梯度审计方法论}：将重力形变场分解为仿射、二次和高阶频带，将各频带投影到螺栓影响子空间上，量化\emph{结构性不可约地板}——即在给定支撑布局下任何螺栓调节策略都无法消除的光学惩罚比例（\S\ref{sec:audit}）。
+
+  \item \textbf{从面型补偿到结构优化的两级设计路径}：发现重力斜率能量的 80--90\% 集中于边缘悬挑带（非螺栓间）；推导 margin-跨距守恒律，预测支撑边距存在内点最优；以\textbf{零额外制造成本实现 26.7\% 的年均 S95 降低}（\S\ref{sec:structural}）。
+
+  \item \textbf{德令哈 20 面镜场的应用案例研究}：提供首张完整的重力惩罚图谱；从场址纬度和塔几何即可预测惩罚非均匀性的纯几何倾角分布模型；以及网格拓扑选择主导逐螺栓位置微调的实验证据（\S\ref{sec:experiments}）。
+\end{enumerate}
+
+% ===========================================================================
+\section{相关工作}
+% ===========================================================================
+
+现代可微渲染技术栈由 Mitsuba~2~\cite{mitsuba2} 奠定。ZeroGrads~\cite{zerograds} 证明了精心工程化的 AD 开销可使可微渲染在速度上与纯前向渲染竞争。
+
+\textbf{CSP 中的可微 MCRT。}Pargmann 等~\cite{pargmann2024} 使用 DMCRT 进行定日镜原位计量。逆深度学习光线追踪~\cite{inverse2025a,inverse2025b} 从焦斑预测表面并完成 sim-to-real 迁移。canting 优化~\cite{canting2025} 和瞄准优化~\cite{aiming2025} 分别调整面板倾角和镜场指向策略。这些工作验证了 DMCRT 梯度在 CSP 光学中行为良好且有用，但都将表面视为给定几何基元或由纯光学变量参数化。本贡献在于封闭循环：螺栓位移 $\rightarrow$ TPS 表面形变 $\rightarrow$ 光线追踪 $\rightarrow$ S95 损失 $\rightarrow$ 梯度返回螺栓，重力在每一步同时进入高度和法向量。
+
+\textbf{可微管线中的物理代理。}物理信息机器学习~\cite{karniadakis2021} 的主流范式是训练学习代理逼近物理仿真器，然后穿过代理做微分。我们的方法不同：使用\emph{解析推导的}代理（具有单位分解性质的薄板样条），其梯度精确，误差预算可通过与有限元解的直接对比来界定（\S\ref{sec:proxy_fidelity}）。
+
+\textbf{耦合结构--光学定日镜优化。}颜健等~\cite{yan2024,yan2025}、Yang 等~\cite{yang2022} 和 Thalange 等~\cite{thalange2017} 通过离线串行耦合优化支撑结构参数。这些工作确立了结构参数显著影响光学质量的重要基线，但串行方式将优化粒度限制为参数扫描。我们的框架在三方面有所区别：(i) 梯度链使整个系统端到端可微；(ii) GPU 端架构使评估廉价；(iii) 可微性使\emph{梯度可达子空间分析}成为可能。
+
+\begin{table}[t]
+\centering
+\caption{与最接近工作的定位对比}
+\label{tab:positioning}
+\small
+\begin{tabular}{lp{2.0cm}p{2.5cm}p{2.0cm}p{1.4cm}p{1.6cm}}
+\toprule
+工作 & 任务 & 设计变量 & 结构模型 & 端到端可微 & 界限分析 \\
+\midrule
+\cite{aiming2025} & 瞄准优化 & 2 DOF/镜 & 无 & 是 & 否 \\
+\cite{canting2025} & Canting优化 & 面板倾角 & 无 & 是 & 否 \\
+\cite{pargmann2024} & 原位计量 & 表面法向场 & 无 & 是 & 否 \\
+\cite{inverse2025a, inverse2025b} & 面型预测 & 表面系数 & 无 & 神经网络 & 否 \\
+\cite{yan2024,yan2025} & 支撑$\to$光学 & 间距$d$, 数量$N$ & FEA (离线) & 否 & 否 \\
+\cite{yang2022,thalange2017} & 结构-光学 & 结构尺寸 & FEA + 光追 & 否 & 否 \\
+\midrule
+\textbf{本文} & \textbf{面型设计} & \textbf{35 螺栓行程 + margin} & \textbf{TPS + 20-bin NLGEOM} & \textbf{是} & \textbf{是} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===========================================================================
+\section{系统架构}
+\label{sec:system}
+
+我们的可微渲染器构建于 Vulkan 计算着色器之上，使用 Slang~\cite{slang} 编写。关键架构决策由单一约束驱动：\emph{每优化迭代必须在交互速率下处理多个太阳方向，且完整梯度链需穿越光学和机械两个域}。
+
+\subsection{单次提交多 Dispatch 管线}
+
+优化循环遍历年度太阳方向集。每迭代，\emph{单次} \verb|vkQueueSubmit| 调用批量提交所有太阳方向的全部 Dispatch：
+
+\begin{enumerate}
+  \item \textbf{力学正向}：TPS 影响叠加 + 20-bin 重力插值 $\rightarrow$ $32\times32$ 表面高度场和法向场。
+  \item \textbf{光追正向}：接收器像素到镜面网格点的蒙特卡洛采样，4 mm 玻璃双层折射，Buie 太阳形状评估。
+  \item \textbf{GPU S95 搜索}：协作二分搜索包含 95\% 总能量的能流阈值（\S\ref{sec:s95}）。
+  \item \textbf{损失 + 光追反向}：Sigmoid 损失梯度 $\rightarrow$ \verb|bwd_diff| 穿过折射到达表面梯度。
+  \item \textbf{力学反向}：定点数梯度 Tile 跨组归约 $\rightarrow$ 通过 TPS 影响函数投影至螺栓梯度。
+  \item \textbf{Adam 更新}：在无界 $\varepsilon$ 空间中做 tanh 有界参数更新。
+\end{enumerate}
+
+关键工程性质是\emph{优化循环内无中间缓冲区回读 CPU}：能流图像、S95 阈值和表面梯度全程驻留在设备端。
+
+\begin{table}[t]
+\centering
+\caption{每太阳方向每迭代的 GPU Dispatch（单次提交）}
+\label{tab:dispatch}
+\small
+\begin{tabular}{lccc}
+\toprule
+Dispatch & 着色器 & Grid & 用途 \\
+\midrule
+\verb|computeBoltSurface| & \verb|bolt_forward| & $(1,1,1)$ & 力学正向 \\
+\verb|clearFlux| & \verb|forward| & $(1,1,1)$ & 清零能流 \\
+\verb|renderForward| & \verb|forward|（A2 特化） & $(k,3950,1)$ & MCRT 正向 \\
+\verb|finalizeFlux| & \verb|forward| & $(1,1,1)$ & 能流归一化 \\
+\verb|computeS95FindLevel| & \verb|s95_gpu| & $(1,1,1)$ & S95 二分搜索 \\
+\verb|computeS95LossBUF| & \verb|s95_gpu| & $(10,4,1)$ & 损失 + dL/dflux \\
+\verb|renderBackwardBolt| & \verb|bolt_backward| （A2） & $(3950,k,1)$ & MCRT 反向 \\
+\verb|reduceSurfaceGradients| & \verb|bolt_backward| & $(1,1,1)$ & 跨组归约 \\
+\verb|projectBoltGradients| & \verb|bolt_backward| & $(1,1,1)$ & $\to \partial L/\partial h_b$ \\
+\verb|boltAdamStep| & \verb|bolt_optimizer| & $(1,1,1)$ & Adam 更新 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{GPU 端 S95 阈值搜索}
+\label{sec:s95}
+
+S95 指标（包含 95\% 拦截能量的最小连续接收器像素集的面积~\cite{s95definition}）作为年度平均光学损失。
+我们在 GPU 上以单工作组协作算法实现整个搜索：256 个线程扫描能流范围计算总能量和最大能流；20 轮二分搜索，每轮单次 \verb|WorkGroupAllReduce| 判定能量比例是否超过 0.95。20 轮迭代深度匹配单精度浮点尾数，与 CPU 参考实现的相对误差约 $10^{-6}$。
+
+\subsection{太阳形状特化与光线剔除}
+
+\textbf{A2 编译期太阳形状 Dispatch}：三个特化光追入口点由 Slang 泛型特化生成，消除约 5\% 内循环分支指令。
+\textbf{A1 逐光线预裁剪}：光线测试反射方向与太阳方向余弦，未通过的光线在正反向遍历中均被跳过。North 300 m 镜面减少总迭代时间 \textbf{4.8\%}。
+
+\subsection{正则化套件}
+
+总损失函数将 S95 sigmoid 损失与可选正则项结合：
+
+\begin{equation}
+\mathcal{L}(\mathbf{h}) = \underbrace{\frac{1}{|\mathcal{D}|}\sum_{d} \text{S95}(\mathbf{h}; \mathbf{s}_d)}_{\text{S95 sigmoid}}
++ \lambda_E (\frac{E_{\text{ref}}}{E}-1)^2
++ \lambda_s (\mathbf{h}-\mathbf{h}^*)^\top \mathbf{G} (\mathbf{h}-\mathbf{h}^*)
++ \lambda_b \mathbf{h}^\top \mathbf{K} \mathbf{h}
++ \lambda_h \sum_b \max(|h_b|-h_{\max}, 0)^2
+\label{eq:loss}
+\end{equation}
+
+螺栓高度参数化为 $h_b = h_{\max} \tanh(\varepsilon_b)$，Adam 更新在无界 $\varepsilon$ 空间进行，学习率补偿为 $\text{lr}_\varepsilon = \text{lr} / h_{\max}$。能量效率项 $\lambda_E$ 防止优化器在远距离处通过溢出光线作弊。
+
+% ===========================================================================
+\section{物理代理与跨域梯度链}
+\label{sec:proxy}
+
+板局部坐标系下的表面模型将法向位移场分解为重力项和螺栓叠加项：
+
+\begin{equation}
+w(\mathbf{r}; \theta, \mathbf{h}) = w_{\text{grav}}(\mathbf{r}; \theta) + \sum_{b=1}^{N_b} h_b \cdot \phi_b(\mathbf{r})
+\label{eq:surface}
+\end{equation}
+
+\subsection{TPS 影响函数}
+
+对每个螺栓 $b$，求解 $38\times38$ TPS 线性系统（$K_{ij} = r_{ij}^2 \log(r_{ij}^2)$，Tikhonov 正则化 $\lambda = 10^{-6}$），全板响应具有\emph{单位分解}性质 $\sum_b \phi_b(\mathbf{r}) \equiv 1$（最大破坏 $< 1.3\times 10^{-6}$）。一阶导数解析计算，匹配着色器切向量约定。
+
+\subsection{重力库：20-Bin NLGEOM 含法向耦合}
+
+重力形变来自 ANSYS MAPDL 非线性静力学仿真（SHELL181，NLGEOM ON，20 个倾角，间距 $\le 4\si{\degree}$）。每 bin 存储\emph{三平面格式}（$w$、$\partial w/\partial u$、$\partial w/\partial v$），打包为合并单缓冲区（240 KB）。20-bin 密度经 5-bin 原型对比验证：稀疏 bin 产生系统性斜率低估，20-bin 下插值残余可忽略（$R^2 \ge 0.96$）。
+
+三平面嵌入是设计的关键：高度 $w$ 及其斜率同时进入表面切向量，表面法线变为：
+
+\begin{equation}
+\mathbf{n} = -\text{normalize}(\mathbf{t}_u \times \mathbf{t}_v),\quad
+\mathbf{t}_u = (W,\; y_u^{\text{grav}} + y_u^{\text{bolt}},\; 0),\;
+\mathbf{t}_v = (0,\; y_v^{\text{grav}} + y_v^{\text{bolt}},\; L)
+\label{eq:normal}
+\end{equation}
+
+若只嵌入高度（单平面格式），重力形变将仅改变光线交点位置而不改变反射方向——在定日镜至接收器的距离上，光学损失将完全感受不到重力效应。三平面嵌入确保重力形变贡献于表面法线，从而进入光学梯度。
+
+\subsection{梯度链：光学 $\to$ 力学}
+
+S95 损失对螺栓高度的梯度穿越三个域：
+
+\begin{equation}
+\frac{dL}{dh_b} = \sum_{d\in\mathcal{D}}\sum_{p\in\text{像素}}
+\Bigg[
+\frac{\partial L}{\partial f_p} \cdot \Bigg(
+\frac{\partial f_p}{\partial y} \cdot \phi_b
++ \frac{\partial f_p}{\partial y_u} \cdot \frac{\partial \phi_b}{\partial u}
++ \frac{\partial f_p}{\partial y_v} \cdot \frac{\partial \phi_b}{\partial v}
+\Bigg)
+\Bigg]
+\label{eq:gradient}
+\end{equation}
+
+三阶段设计（逐像素定点累加 $\to$ 跨组 float 归约 $\to$ 螺栓投影）使原子操作减少\textbf{50 倍}。
+
+\subsection{代理保真度}
+\label{sec:proxy_fidelity}
+
+\begin{table}[t]
+\centering
+\caption{TPS 代理 vs. NLGEOM FEA 验证（North 300 m，35 螺栓最优）}
+\label{tab:proxy_fidelity}
+\small
+\begin{tabular}{lcccc}
+\toprule
+角度 & RMS (mm) & $R^2$ & 形状相关性 & 能流相关性 \\
+\midrule
+\SI{29.5}{\degree} & 1.94--1.96 & 0.955 & 0.980 & $>0.997$ \\
+\SI{58.5}{\degree} & 2.04--2.05 & 0.952 & 0.980 & $>0.997$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+系统性偏差源于 TPS 不含板弯曲刚度和材料属性。对于梯度链使用的微分效应 $\partial w / \partial h_b$，代理精度充分。
+
+% ===========================================================================
+\section{梯度审计：形变分析与界限}
+\label{sec:audit}
+
+物理代理嵌入可微渲染器后，我们现在利用该框架回答 RQ1 和 RQ2：\emph{重力惩罚有多大，其物理成因是什么，螺栓调节究竟能消除其中多少？}
+
+\subsection{形变分解}
+
+将每角度重力位移场分解为三个频谱带：仿射（整体倾转 $+$ 活塞）、二次（类聚焦）、高阶（支撑间凹陷）。仿射分量在所有角度下\emph{精确为零}——35 颗支撑螺栓钉死了板的平均平面，因此仅作用于仿射自由度的面板级调整方法（canting、aiming）在原理上无法触及主导重力损伤。二次分量很小（$\le 0.6$~mrad）。高阶支撑间凹陷占绝对主导：10° 倾角下 \textbf{6.36 mrad} 等效斜率。
+
+\subsection{可补偿性：投影到螺栓子空间}
+
+将重力斜率场投影到 35 个 TPS 影响函数张成的子空间上：
+
+\begin{equation}
+\text{移除率}(\theta) =
+\frac{\|\nabla w_{\text{grav}}\|^2 - \min_{\mathbf{h}}\|\nabla w_{\text{grav}} - \sum_b h_b \nabla\phi_b\|^2}
+{\|\nabla w_{\text{grav}}\|^2}
+\label{eq:removal}
+\end{equation}
+
+结果：TPS 影响函数仅能移除高阶凹陷分量斜率方差的\textbf{26--38\%}。其余 62--74\% 在给定 35 螺栓布局下是\textbf{结构性不可约的}。
+
+\subsection{界限框架}
+
+形式化四层界限层级：$B^*$（无重力最优下界）、$B_{\text{ideal}}$（无重力理想椭圆面）、$B_{\text{comp}}$（闭式补偿）、$B_{\text{naive}}$（天真基线）。
+
+\begin{table}[t]
+\centering
+\caption{四层界限：300 m 处 S95（m\textsuperscript{2}），36 太阳方向}
+\label{tab:bounds}
+\small
+\begin{tabular}{lcccc}
+\toprule
+界限 & North & East & South & West \\
+\midrule
+$B^*$（无重力优化下界） & 49.77 & 65.00 & 73.07 & 64.68 \\
+$B_{\text{ideal}}$（无重力 LSQ） & 51.32 & 65.68 & 73.51 & 65.60 \\
+$B_{\text{comp}}$（闭式补偿）  & 51.75 & 76.71 & 94.90 & 76.83 \\
+$B_{\text{naive}}$（LSQ + 重力）    & 51.31 & 77.90 & 98.33 & 78.07 \\
+\midrule
+结构性不可约比例 (\%) & 37\% & \textbf{86.9\%} & \textbf{84.0\%} & \textbf{86.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+核心发现：东、南、西三面镜子天真至理想之差距的\textbf{84--87\% 是结构性不可约的}。闭式补偿仅回收 10--14\%；端到端优化至多再增加 3--5\%。
+
+\subsection{消融实验：地板的不可变性}
+
+九组消融实验同时变动参数化方式、锚定强度（0--$10^5$）、软行程墙、弯曲能和初始值。结果：东、南、西三镜的最终 S95 分别被\textbf{锁定在 76.2、94.3 和 76.2 m\textsuperscript{2}}，九组全跨仅 $\le 0.13$ m\textsuperscript{2}（蒙特卡洛噪声量级）。结构性地板对优化器、正则化和初始值均不变。
+
+% ===========================================================================
+\section{从面型补偿到结构优化}
+\label{sec:structural}
+
+结构性地板由支撑布局决定的结论，直接驱动将布局本身变为优化变量。
+
+\subsection{悬挑发现}
+
+密度扫描测试了在相同 8\% margin 下增加螺栓是否可降低地板。结果出人意料：\textbf{螺栓增加 80\%（35$\to$63）仅使重力地板降低 4.2\%}。两个板理论模型同时被证伪。斜率能量的空间分区揭示了原因：所有角度下\textbf{80--91\%} 的重力斜率能量集中在\emph{边缘悬挑带}——最外圈螺栓以外的区域，而非额外螺栓将细分的螺栓间 bay。
+
+\subsection{Margin--跨距守恒律}
+
+减小边缘 margin $m$ 同时：\textbf{减小}悬挑伸出量 $\propto m$（变形降低 $\propto m^3$）和\textbf{增大}螺栓间跨距（变形升高 $\propto (1-m)^3$）。对冲缩放意味着固定螺栓数下存在 margin 的\emph{内点最优}——一笔免费的结构红利。
+
+\subsection{Margin 优化结果}
+
+以五个 margin 值 $m \in \{0.08, 0.06, 0.05, 0.04, 0.03\}$ 重新生成 ANSYS 重力 bins 并运行端到端优化管线（细子步 \verb|NSUBST 50,500,50| 确保准静态光滑分支跟随）。最优点出现在 $m^* = 0.04$--$0.05$，点估计 $m^* = 0.05$。334 太阳方向下，四面镜年均 S95 合计：
+
+\begin{equation}
+\text{S95}_{\text{total}}(m{=}0.05) = 281.7\text{ m}^2 \quad\text{vs.}\quad
+\text{S95}_{\text{total}}(m{=}0.08) = 384.2\text{ m}^2
+\label{eq:final}
+\end{equation}
+
+\textbf{降低了 26.7\%}，纯粹通过将螺栓行移近板边实现。
+
+\begin{table}[t]
+\centering
+\caption{Margin 优化：每镜年均 S95（m\textsuperscript{2}），334 太阳方向}
+\label{tab:margin}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Margin & North & East & South & West & 合计 \\
+\midrule
+0.08（基线） & 72.75 & 101.59 & 116.57 & 93.28 & 384.2 \\
+0.05（最优）  & 54.06 &  73.23 &  81.28 & 73.09 & \textbf{281.7} \\
+\midrule
+红利 (\%)    & $-$25.7 & $-$27.9 & $-$30.3 & $-$21.6 & \textbf{$-$26.7} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{方法论注释：NLGEOM 子步要求}
+\label{sec:substep}
+
+粗子步 per-angle 独立 NLGEOM 求解（\verb|NSUBST 1,10,1|）在约 46° 倾角附近产生 snap-through 双稳态伪影。修正方案使用细子步（\verb|NSUBST 50,500,50|）确保准静态光滑分支跟随。该发现构成方法论贡献：任何依赖 per-angle 独立 FEA 求解的多角度参数化模型，必须用细子步或数值延拓验证分支连续性。
+
+% ===========================================================================
+\section{实验}
+\label{sec:experiments}
+
+\subsection{实验设置}
+
+\begin{itemize}
+  \item \textbf{硬件：}NVIDIA RTX 4070 SUPER 12 GB，Vulkan 1.3，Slang 编译器。
+  \item \textbf{定日镜：}$12.84 \times 9.45$ m 玻璃镜，厚 4 mm，$n=1.523$，35 颗支撑螺栓（7$\times$5，margin 8\%）。$D=392$ N$\cdot$m，$q=98.1$ N/m\textsuperscript{2}。
+  \item \textbf{接收器：}圆柱形，半径 10 m，高 20 m，$157\times50$ 像素。
+  \item \textbf{太阳模型：}Buie CSR$=0.01$，DNI$=1000$ W/m\textsuperscript{2}，$\sigma_s = 1$ mrad。
+  \item \textbf{太阳方向：}36 用于快速迭代，110（论文最小集），334（均衡年度），全部关于真太阳正午对称。
+  \item \textbf{优化器：}Adam（$\beta_1{=}0.9$，$\beta_2{=}0.999$），lr $=4\times10^{-4}$，100--200 迭代。
+  \item \textbf{场址：}中国青海省德令哈（37.36\si{\degree}N，97.29\si{\degree}E），塔高 300 m。
+\end{itemize}
+
+\subsection{RQ1：真实重力惩罚图谱}
+
+图~\ref{fig:penalty} 展示了 20 面镜的年度 S95 膨胀比（334 太阳方向）。重力惩罚呈\textbf{空间强非均匀性}：北侧镜几乎免疫（比值 1.001--1.02$\times$），南侧 150 m 镜面最差，达 1.539$\times$。
+
+\begin{figure}[t]
+\centering
+% \includegraphics[width=\linewidth]{fig_penalty_map}
+\caption{年度重力惩罚图谱：20 面镜的 S95 膨胀比（334 太阳方向）。北侧镜几乎免疫；南侧近场最差，达 1.539$\times$。}
+\label{fig:penalty}
+\end{figure}
+
+非均匀性有纯几何的解释。全年倾角 $\theta$ 分布仅由场址纬度、塔几何和镜位坐标决定。在德令哈，北侧 300 m 镜 $\theta \in [36\si{\degree}, 65\si{\degree}]$，35\% 时间落在 40--50° 低凹陷带；南侧 300 m 镜 24\% 时间 $\theta < 20\si{\degree}$（弯沉最大区间）；东/西侧镜穿越 46° 变号点。该模型以 Pearson $r = 0.913$ 预测了实测惩罚图谱，转化为\textbf{设计规则}：哪些定日镜值得做结构补偿，仅从场址几何即可确定。
+
+\subsection{RQ2：不可约地板}
+
+九组消融确认了地板的不变性：参数化、正则化、初始值均无法突破。在固定 $N_b = 35$ 和 $m = 8\%$ 下，螺栓行程调节至多回收 $\sim$13--16\%。其余 84--87\% 需要改变支撑布局本身。
+
+\subsection{RQ3：结构优化}
+
+在最优 margin $m^*{=}0.05$ 下，密度扫描揭示 9$\times$7（63 螺栓）在 margin 红利之外进一步将 S95 降低 10--14\%。甜点呈"密度 $\times$ 长宽比"二维面，10$\times$7（70 螺栓）总体最优。
+
+\textbf{位置--高度联合优化。}逐螺栓位置仅移动 1--3 cm（从至多 30 cm 步长中），S95 改善\textbf{0.5--0.9\%} 后触墙。\textbf{网格拓扑选择主导位置微调。}未涌现不对称布局。
+
+\subsection{时序与可扩展性}
+
+\begin{table}[t]
+\centering
+\caption{每迭代时序分解（RTX 4060 Laptop，36 太阳方向，单镜）}
+\label{tab:timing}
+\small
+\begin{tabular}{lr}
+\toprule
+阶段 & 时间 (ms) \\
+\midrule
+力学正向 & 0.3 \\
+光追正向（每太阳方向） & 18.2 \\
+S95 二分搜索 & 0.1 \\
+光追反向（每太阳方向） & 26.5 \\
+力学反向 & 0.5 \\
+Adam 更新 & $<0.1$ \\
+\midrule
+\textbf{每太阳方向合计} & \textbf{45.6} \\
+\textbf{每迭代合计（36 suns）} & \textbf{1,640} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+200 迭代、36 太阳方向单镜优化约 7 分钟，四面镜约 20 分钟。
+
+% ===========================================================================
+\section{讨论}
+
+\subsection{物理代理究竟做了什么？}
+
+代理的真正价值不在逐镜补偿（仅回收 13--16\%），而在\emph{驱动结构设计决策}（margin 红利 26.7\% 远超补偿上限）。
+
+\subsection{局限性}
+
+TPS 线性性：NLGEOM FEA 验证形状相关性 0.95--0.96，对梯度计算使用的微分效应足够。单场址、单载荷：德令哈一处场址，未建模风载和热梯度。钢 vs. 玻璃：形状几乎相同（余弦相似度 $>0.996$），结构结论可定性移植，但绝对数值需按生产硬件重新标定。
+
+\subsection{扩展}
+
+全场规模化、瞄准联合优化、双稳态分支工程。
+
+% ===========================================================================
+\section{结论}
+
+本文提出了 GPU 原生可微蒙特卡洛光线追踪系统，嵌入有限元衍生的物理代理，使定日镜面型端到端梯度优化得以穿越结构和光学两个域。三项发现构成了本文的结构主线：
+
+\begin{enumerate}
+  \item \textbf{重力惩罚真实、显著且可预测。}最差情况下 S95 膨胀达 1.539$\times$，非均匀性可由场址几何独立预测。
+  \item \textbf{结构性地板可界定、可认证。}固定 35 螺栓布局下仅 26--38\% 斜率方差可达；84--87\% 结构性不可约。地板对优化器、正则化和初始值均不变。
+  \item \textbf{地板可通过结构优化来移动。}发现悬挑主导能量分布，导出 margin--跨距守恒律，仅通过 margin 优化即实现零成本 26.7\% S95 降低。
+\end{enumerate}
+
+该框架将重力补偿从经验性逐镜调节转变为有界、可认证、完全自动化的设计流程。梯度审计方法论不限于定日镜，可作为物理代理嵌入可微渲染管线的其他领域的模板。
+
+\appendix
+
+\section*{附录 A：ANSYS 自动化与坐标系约定}
+
+ANSYS MAPDL 批处理管线自动化 per-angle NLGEOM 静力学求解，板局部坐标系由法向 $(0, \cos\theta, +\sin\theta)$ 定义。
+
+\section*{附录 B：太阳方向采样}
+
+太阳方向关于真太阳正午对称生成，消除均时差不对称。提供三种预设：paper（$\sim$110 方向）、balanced（$\sim$334 方向）、dense（$\sim$1,556 方向）。
+
+\begin{thebibliography}{99}
+
+\bibitem{mitsuba2}
+Nimier-David, M.; Vicini, D.; Zeltner, T.; Jakob, W.
+Mitsuba 2: A retargetable forward and inverse renderer.
+\textit{ACM Transactions on Graphics} Vol. 38, No. 6, Article No. 203, 2019.
+
+\bibitem{mitsuba3}
+Jakob, W.; Speierer, S.; Roussel, N.; et al.
+Mitsuba 3 renderer, 2022. Available at \url{https://mitsuba-renderer.org}.
+
+\bibitem{zerograds}
+Yan, Y.; Zhang, Z.; Jakob, W.
+ZeroGrads: Learned optimization of production assets via differentiable rendering.
+\textit{ACM Transactions on Graphics} Vol. 43, No. 4, 2024.
+
+\bibitem{diffrp}
+Zhou, K.; Chen, W.; Yu, J.
+Computational caustic design for surface light sources.
+\textit{IEEE TVCG} Vol. 32, No. 2, 2026.
+
+\bibitem{jakob2022dr}
+Jakob, W. Differentiable rendering. \textit{ACM SIGGRAPH 2022 Courses}, 2022.
+
+\bibitem{slang}
+He, Y.; Foley, T.; Tatarchuk, N.; Fatahalian, K.
+Slang: A language for real-time GPU shading and differentiation.
+\textit{ACM Transactions on Graphics} Vol. 41, No. 6, 2023.
+
+\bibitem{aiming2025}
+(TBC) A novel heliostat aiming optimization framework via differentiable MCRT.
+\textit{Applied Energy}, 2025.
+
+\bibitem{canting2025}
+(TBC) The optimization of heliostat paraboloid canting via differentiable ray tracing.
+\textit{Solar Energy}, 2025.
+
+\bibitem{pargmann2024}
+Pargmann, M.; et al.
+Automatic heliostat learning for in situ CSP metrology with differentiable ray tracing.
+\textit{Nature Communications} Vol. 15, Article No. 6997, 2024.
+
+\bibitem{inverse2025a}
+(TBC) Inverse deep learning raytracing for heliostat surface prediction.
+\textit{Solar Energy}, 2025.
+
+\bibitem{inverse2025b}
+(TBC) Scalable heliostat surface predictions from focal spots.
+\textit{Solar Energy}, 2025.
+
+\bibitem{karniadakis2021}
+Karniadakis, G. E.; et al.
+Physics-informed machine learning. \textit{Nature Reviews Physics} Vol. 3, 422--440, 2021.
+
+\bibitem{diffopt2024}
+(TBC) Differentiable automatic structural optimization using graph deep learning.
+\textit{Advanced Engineering Informatics}, 2024.
+
+\bibitem{ecmwind2023}
+(TBC) Digital twin of wind farms via physics-informed deep learning.
+\textit{Energy Conversion and Management}, 2023.
+
+\bibitem{yan2024}
+李彬; 颜健; 周伟; 彭佑多.
+服役载荷与结构参数对塔式太阳能定日镜光学精度的影响.
+\textit{光学学报} Vol. 44, No. 6, 0623001, 2024.
+
+\bibitem{yan2025}
+颜健; 宋天池; 彭佑多; 周伟.
+基于支撑螺栓顶压成型的五边形塔式太阳能定日镜光学精度研究.
+\textit{光学学报} Vol. 45, No. 6, 0608001, 2025.
+
+\bibitem{yang2022}
+Yang, (TBC) et al. A coupled structural-optical analysis of a novel umbrella heliostat.
+\textit{Solar Energy}, 2022.
+
+\bibitem{thalange2017}
+Thalange, (TBC) et al. Design, optimization and optical performance study of tripod heliostat.
+\textit{Energy} Vol. 135, 610--624, 2017.
+
+\bibitem{buie2003}
+Buie, D.; Monger, A. G.; Dey, C. J.
+Sunshape distributions for terrestrial solar simulations.
+\textit{Solar Energy} Vol. 74, No. 2, 113--122, 2003.
+
+\bibitem{s95definition}
+Collado, F. J.; Guallar, J.
+A review of optimized design layouts for solar power tower plants with Campo code.
+\textit{Renewable and Sustainable Energy Reviews} Vol. 20, 142--154, 2013.
+
+\bibitem{fastncm2026}
+林瑞剑; (TBC) et al. Fast-NCM. 预印本, 2026.
+
+\bibitem{hflcal}
+Ho, C. K.; Khalsa, S. S. HFLCAL flux model.
+\textit{Journal of Solar Energy Engineering} Vol. 134, No. 1, 2012.
+
+\bibitem{soltrace}
+Wendelin, T. SolTRACE. \textit{ASME ISEC}, 2003.
+
+\bibitem{tonatiuh}
+Blanco, M. J.; et al. Tonatiuh. \textit{Solar Energy}, 2010.
+
+\bibitem{kesheng}
+(TBC) Kesheng V3 heliostat specifications. Private communication, 2026.
+
+\end{thebibliography}
+
+\end{document}
