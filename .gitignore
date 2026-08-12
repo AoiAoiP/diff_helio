@@ -20,6 +20,12 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+
 # Claude / AI assistant
 .claude/
 
@@ -36,7 +42,7 @@ validation_*/
 logs/
 archive_*.tar.gz
 
-# Legacy data archived out of repo (2026-07-30, see archive_legacy_data.tar.gz)
+# Legacy data archived out of repo (tarballs in L:/Code/_archive_bezier_paper_prep/, 2026-08-10)
 train_data/
 validation/
 data_proxy_old/

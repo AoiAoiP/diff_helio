@@ -39,9 +39,6 @@ public:
                              const std::array<float, 3> &helioPos,
                              const std::array<float, 3> &aimPoint, float pixelArea);
 
-    // WoS offline influence computation
-    void computeWoSInfluence(const std::string &outputDir);
-
     // Public for --dump-flux and external use
     void createPipelines();
     void createBuffersAndTextures();
@@ -71,8 +68,6 @@ private:
     static float computeS95Level(const std::vector<float> &flux);
 
     float computeS95Loss(float s95Level);
-    float computeLossGPU(float s95Level);
-    uint32_t countS95PixelsGPU(float s95Level);
     void adamStep(uint32_t iteration);
 
     // Flux gradient management
@@ -119,8 +114,8 @@ private:
 
     // SPIR-V (Bezier mode)
     std::vector<uint32_t> m_spvBezier, m_spvForward, m_spvClear, m_spvFinalize, m_spvBackward,
-                         m_spvBackwardReduce, m_spvLoss, m_spvCount, m_spvAdam,
-                         m_spvLossPartial, m_spvLossFinal, m_spvClearFluxGrad;
+                         m_spvBackwardReduce, m_spvLoss, m_spvAdam,
+                         m_spvClearFluxGrad;
 
     // SPIR-V (Bolt mode)
     std::vector<uint32_t> m_spvBoltSurface, m_spvBoltBackward, m_spvBoltBackwardReduce,
@@ -131,8 +126,8 @@ private:
 
     // Pipelines (Bezier mode)
     ComputePipeline m_pipeBezier, m_pipeForward, m_pipeClear, m_pipeFinalize,
-                    m_pipeBackward, m_pipeBackwardReduce, m_pipeLoss, m_pipeAdam, m_pipeCount,
-                    m_pipeLossPartial, m_pipeLossFinal, m_pipeClearFluxGrad;
+                    m_pipeBackward, m_pipeBackwardReduce, m_pipeLoss, m_pipeAdam,
+                    m_pipeClearFluxGrad;
 
     // Pipelines (Bolt mode)
     ComputePipeline m_pipeBoltSurface, m_pipeBoltBackward, m_pipeBoltBackwardReduce,
