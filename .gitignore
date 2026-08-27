@@ -29,6 +29,9 @@ Thumbs.db
 # Claude / AI assistant
 .claude/
 
+# DeepSeek Harness local config (skills copied here are derived from .claude/skills + third-party repos)
+.dsh/
+
 # Third-party libraries (fetched by CMake FetchContent)
 third_party/
 
