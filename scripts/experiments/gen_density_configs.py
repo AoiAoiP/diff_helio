@@ -57,7 +57,7 @@ for layout_key, lo in LAYOUTS.items():
     cfg["bolt_margin"] = 0.05
     cfg["influence_data_path"] = lo["data"]
     cfg["bolt_init_dir"] = lo["init_dir"]
-    cfg["output_dir"] = f"results_density/{layout_key}"
+    cfg["output_dir"] = f"experiments/runs/density/{layout_key}"
 
     fname = f"configs/density_scan/{layout_key}.json"
     with open(fname, "w") as f:

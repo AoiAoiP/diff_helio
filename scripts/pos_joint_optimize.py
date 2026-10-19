@@ -167,7 +167,7 @@ def main():
     ap.add_argument("--iters", type=int, default=100)
     ap.add_argument("--lr-pi", type=float, default=0.05, help="Adam lr on scaled positions")
     ap.add_argument("--template", default="configs/_fw_tanh_a0_110.json")
-    ap.add_argument("--out-root", default="results_pos")
+    ap.add_argument("--out-root", default="experiments/runs/pos")
     args = ap.parse_args()
 
     template = json.load(open(os.path.join(ROOT, args.template)))

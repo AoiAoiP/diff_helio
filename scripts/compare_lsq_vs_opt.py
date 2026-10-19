@@ -3,9 +3,9 @@
 Parse evaluation outputs and produce LS-Fit vs Optimized S95 comparison.
 
 Reads S95 values from:
-  - LS eval output (results_lsq_eval)
-  - Opt eval output (results_opt_eval)
-  - Original optimization summaries (results_Field)
+  - LS eval output (experiments/runs/lsq_eval)
+  - Opt eval output (experiments/runs/opt_eval)
+  - Original optimization summaries (experiments/runs/field)
 Produces a comparison table and optional CSV.
 """
 
@@ -44,11 +44,11 @@ def parse_eval_output(text):
 
 
 def parse_opt_summary(summary_dir):
-    """Parse optimization_summary.csv files from results_Field.
+    """Parse optimization_summary.csv files from experiments/runs/field.
     Returns dict: name -> {init_s95, best_s95, reduction_pct}
     """
     results = {}
-    for csv_path in sorted(Path(summary_dir).glob('results_*/optimization_summary.csv')):
+    for csv_path in sorted(Path(summary_dir).glob('**/optimization_summary.csv')):
         with open(csv_path) as f:
             header = f.readline().strip()
             for line in f:
@@ -78,7 +78,7 @@ def main():
                         help='Path to LS eval stdout text file')
     parser.add_argument('--opt-eval-output', default=None,
                         help='Path to Opt eval stdout text file')
-    parser.add_argument('--opt-summary-dir', default=str(ROOT / 'results_Field'),
+    parser.add_argument('--opt-summary-dir', default=str(ROOT / 'experiments/runs/field'),
                         help='Directory with optimization_summary.csv files')
     parser.add_argument('--output-csv', default=None,
                         help='Output CSV path for comparison table')

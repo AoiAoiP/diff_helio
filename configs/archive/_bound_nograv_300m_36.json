@@ -35,7 +35,7 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_lsq/",
   "influence_data_path": "data_proxy",
-  "output_dir": "results_bound_300m_36",
+  "output_dir": "experiments/runs/bound_300m_36",
   "samplePoolPow": 26,
   "disable_gravity": 1,
   "gravity_normal_coupling": 1,

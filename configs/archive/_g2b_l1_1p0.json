@@ -35,7 +35,7 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_comp/",
   "influence_data_path": "data_proxy_margin/7x5_margin05_fine",
-  "output_dir": "results_g2b_l1_1p0",
+  "output_dir": "experiments/runs/g2b_l1_1p0",
   "samplePoolPow": 26,
   "gravity_normal_coupling": 1,
   "max_bolt_stroke": 0.06,

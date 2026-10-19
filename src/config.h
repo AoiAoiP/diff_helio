@@ -14,7 +14,7 @@ struct Config {
     std::string sunTrainFile = "data/36_sundir_fast.txt";
     std::string sunValidationFile = "data/738_sundir_year.txt";
     std::string ellipseFile = "data/ellipse.txt";
-    std::string outputDir = "results";
+    std::string outputDir = "experiments/runs/unnamed";
 
     // Receiver
     std::array<float, 3> receiverPosition = {0.0f, 180.0f, 0.0f};

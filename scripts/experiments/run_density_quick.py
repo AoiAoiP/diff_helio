@@ -38,7 +38,7 @@ for name, nx, nz, nb, data_path, init_dir in LAYOUTS:
         "bolt_margin": 0.05,
         "bolt_init_file": "auto", "bolt_init_dir": init_dir,
         "influence_data_path": data_path,
-        "output_dir": f"results_density/{name}_quick",
+        "output_dir": f"experiments/runs/density/{name}_quick",
         "samplePoolPow": 26,
         "gravity_normal_coupling": 1,
         "max_bolt_stroke": 0.06,
@@ -62,7 +62,7 @@ for name, nx, nz, nb, data_path, init_dir in LAYOUTS:
         print("STDERR:", result.stderr[:500])
 
     # Read summary
-    summary_path = f"results_density/{name}_quick/optimization_summary.csv"
+    summary_path = f"experiments/runs/density/{name}_quick/optimization_summary.csv"
     if os.path.exists(summary_path):
         with open(summary_path) as f:
             print(f.read())

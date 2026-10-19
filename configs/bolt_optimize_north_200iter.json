@@ -33,6 +33,6 @@
   "bolt_margin": 0.08,
   "use_bspline": 0,
   "influence_data_path": "data_proxy",
-  "output_dir": "results_north_200iter_lrnone",
+  "output_dir": "experiments/runs/north_200iter_lrnone",
   "samplePoolPow": 26
 }

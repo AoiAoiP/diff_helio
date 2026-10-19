@@ -35,6 +35,6 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_opt/",
   "influence_data_path": "data_proxy",
-  "output_dir": "results_1200m_reg_eval",
+  "output_dir": "experiments/runs/1200m_reg_eval",
   "samplePoolPow": 26
 }

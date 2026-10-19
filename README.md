@@ -3,7 +3,7 @@
 基于 **Vulkan GPU 光线追踪 + Slang 自动微分**的定日镜螺栓调高优化管线。通过 TPS（薄板样条）物理代理模型将 35 根螺栓推拉高度映射为镜面变形、将 FEA 重力形变耦合进表面法线，最小化圆柱接收器上的年均 S95 光斑面积。
 
 **当前研究主线**：结构层优化（Phase 5，2026-07-31 闭环）——margin 8%→0.04–0.05（点估计 0.05）零螺栓成本，300m NEWS 四镜年均 S95 红利 **−26.7%**（334dir 真值终评）；前置重力补偿与结构性地板认证（Phase 0–4）——见
-`docs/phase5_structural_optimization.md`（Phase 5 主报告）、`docs/gravity_compensation_experiment.md`（Phase 0–4 主报告）与下文「研究主线」一节。
+`docs/phase5_report.md`（Phase 5 总报告）、`docs/archive/phase5_structural_optimization.md`（过程日志）、`docs/gravity_compensation_experiment.md`（Phase 0–4 主报告）与下文「研究主线」一节。
 
 ---
 
@@ -135,12 +135,12 @@ proxy 对光学目标的贡献结构上为零。修复重力→法线耦合后�
 ## 研究主线续章：Phase 4–5（2026-07-30/31，已闭环）
 
 - **Phase 4（FEA 抽查）**：地板通过独立 FEA 验证——不是渲染器/proxy 假象，是真实物理（重力主报告 §3.7）。
-- **Phase 5（结构层优化，主报告 `docs/phase5_structural_optimization.md`）**：把支撑布局变成优化变量。
+- **Phase 5（结构层优化，主报告 `docs/phase5_report.md`）**：把支撑布局变成优化变量。
   发现链：密度轴死亡（+80% 螺栓仅 −4% 地板）→ 真凶悬挑（80–90% 斜率能量）→ 悬挑-跨距守恒律
   （margin 存在内点最优）→ von Kármán 板 ROM 重力 provider 进端到端闭环（G5 门通过）→
   粗子步跳支伪影识别与清除（细子步 NSUBST 50,500,50 真值，全部 margin 光滑分支）。
   **终版结论：margin 8%→0.04–0.05（点估计 0.05），300m NEWS 四镜年均 S95 281.7 vs 基线 384.2（334dir），
-  红利 −26.7%**；终版交付包 `results_final_m05/`（布局坐标+四镜行程+面型/光斑图+年均 S95）。
+  红利 −26.7%**；终版交付包 `final_m05/`（外置归档，不在本机）。
 
 ---
 
@@ -258,9 +258,11 @@ North −0.5%）。像素化敏感性提示：157×50px（0.4m）的 S95 面积�
 │   └── init_comp_36/              闭式重力补偿 init + 逐镜锚定 buffer（36dir）
 ├── data_proxy/                    TPS 影响函数 + v2 三平面重力 bins（12288 B/bin）
 ├── proxy/                         Python 侧 TPS 管线参考实现
-├── results_fw_*/                  Phase 3 消融结果（9 组，BEST_bolts + history）
-├── results_final_m05/             Phase 5 终版交付包（m*=0.05 布局 + 四镜行程 + 334dir 终评）
-├── results_g5truth/ results_truth/  margin / 密度 / 稀疏布局真值结果
+├── experiments/
+│   ├── INDEX.md                   实验台账（ID / 目的 / claim / 配置 / 口径 / 状态）
+│   └── runs/                      运行输出（Phase 3 消融 9 组、B* / B_ideal / B_naive 基线）
+├── figures/paper/INDEX.md         图表台账（图 1–12 的数据与脚本映射）
+├── skills/                        外部研究 skill 来源（SOURCES.md 记录远端与提交）
 ├── docs/                          主报告、投稿策略、论文初稿、太阳采样分析
 └── analysis/                      诊断与惩罚表报告
 ```
@@ -319,16 +321,15 @@ North −0.5%）。像素化敏感性提示：157×50px（0.4m）的 S95 面积�
 
 | 文件 | 内容 |
 |------|------|
-| `CLAUDE.md` | 开发者参考：编译、架构、方法论、实验日志 |
+| `AGENTS.md` | agent 入口：编译、目录约定、证据口径、已知坑 |
 | `docs/gravity_compensation_experiment.md` | **重力补偿主报告**（诊断结论/方案/日志/清单，Phase 0–4 闭环） |
 | `docs/gravity_compensation_experiment.md` §3.7 | **Phase 4 FEA 抽查**（台式机，South+North 300m × 3 角度：地板为真实物理，含执行/产物补记） |
-| `docs/phase5_structural_optimization.md` | **Phase 5 结构优化主报告**（悬挑主导/守恒律/材料缩放/ROM provider/G0–G5 门/FEA 抽查/真值修正批；**终版 m\*≈0.04–0.05、红利 −26.7%**） |
+| `docs/archive/phase5_structural_optimization.md` | Phase 5 **过程日志**（归档；结论以 `docs/phase5_report.md` 为准） |
 | `docs/phase5_report.md` | **Phase 5 总报告（重写版，2026-08-05）**：螺栓排布（margin→密度→端到端位置）× 材料双轴整合版；真值口径为准 |
-| `docs/submission_strategy_and_outline.md` | 投稿方向分析（AEI 首选）+ 论文大纲 + 后续工作 |
-| `docs/phase5_4_implementation_plan.md` | Phase 5.4 实施方案（基建/门体系/双轨架构）；执行中，进展见主报告 §3.10 |
-| `docs/phase6_pos_height_joint.md` | **Phase 6 栓位×行程联合优化（已收口 2026-08-07）**：bold 协议多初值批——网格选择>>位置微调（~1% 精修）、10×7 最优、无不对称涌现；含交接提示词 |
-| `docs/draft.md` | 论文初稿中文版（摘要 + 引言 + 相关工作，§3 起为大纲） |
+| `docs/paper_strategy.md` | 投稿决策（AEI 首选，备选 CVM）+ 写作四条规范；旧大纲仅作存档 |
+| `docs/bolt_position_optimization_stage_report.md` | **Phase 5.4 + Phase 6 收口存档**：位置优化三路径裁决（v3 证伪 / v4 弱成立 / A4 封顶）+ 栓位×行程联合优化（10×7 最优、位置精修 ~1%）；含设计规则与重启判据 |
+| `docs/paper/draft.md` | 论文初稿中文版（摘要 + 引言 + 相关工作，§3 起为大纲） |
 | `analysis/gravity_compensability_report.md` | Phase 0 重力可补偿性诊断（三频带分解、H3 预测） |
 | `analysis/real_gravity_penalty_table.md` | Phase 1 真实重力惩罚表（20 镜 A/B） |
-| `docs/sundir_analysis_and_recommendations.md` 等 | 太阳方向采样策略分析（36/110/334dir 一致性，2026-08-10 起移入 docs/） |
+| `docs/sundir_sampling.md` | 太阳方向采样：设计原则 + 36/110/334dir 对比实验（North/East/West） |
 | `analysis/` | 其他历史分析文档 |

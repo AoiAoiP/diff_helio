@@ -36,6 +36,6 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_lsq/",
   "influence_data_path": "data_proxy",
-  "output_dir": "results_probe_nograv_pillbox",
+  "output_dir": "experiments/runs/probe_nograv_pillbox",
   "samplePoolPow": 26
 }

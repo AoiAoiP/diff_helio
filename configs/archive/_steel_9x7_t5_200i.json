@@ -35,7 +35,7 @@
   "bolt_init_file": "",
   "bolt_init_dir": "data/init_comp/",
   "influence_data_path": "data_proxy_steel/9x7_steel_t5_m05_fine",
-  "output_dir": "results_steel_9x7_t5_200i",
+  "output_dir": "experiments/runs/steel_9x7_t5_200i",
   "samplePoolPow": 26,
   "gravity_normal_coupling": 1,
   "max_bolt_stroke": 0.06,

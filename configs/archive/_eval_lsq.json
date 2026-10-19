@@ -35,6 +35,6 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_lsq/",
   "influence_data_path": "data_proxy",
-  "output_dir": "results_lsq_eval",
+  "output_dir": "experiments/runs/lsq_eval",
   "samplePoolPow": 26
 }

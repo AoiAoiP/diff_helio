@@ -2,7 +2,7 @@
 """
 Run ANSYS FEA validation for optimized bolt configurations.
 
-Reads optimized bolt strokes from a result directory (results_xxx/), runs ANSYS
+Reads optimized bolt strokes from a result directory (experiments/runs/xxx/), runs ANSYS
 MAPDL batch simulations with actual bolt displacements (nonzero stroke), and
 outputs deformed plate point clouds for validation against the proxy model.
 
@@ -17,13 +17,13 @@ Prerequisites:
 
 Usage:
   # Validate at representative angles
-  python scripts/run_fea_validation.py --result-dir results_north_300iter --angles 0 29.5 58.5
+  python scripts/run_fea_validation.py --result-dir experiments/runs/north_300iter --angles 0 29.5 58.5
 
   # Dry run: generate APDL only
-  python scripts/run_fea_validation.py --result-dir results_north_300iter --dry-run
+  python scripts/run_fea_validation.py --result-dir experiments/runs/north_300iter --dry-run
 
   # Multi-heliostat results
-  python scripts/run_fea_validation.py --result-dir results_4mirror_300iter --heliostat-prefix North
+  python scripts/run_fea_validation.py --result-dir experiments/runs/4mirror_300iter --heliostat-prefix North
 
 Output (<result_dir>/fea_validation/):
   fea_deformed_{angle}deg.txt   — x,y,z,ux,uy,uz (global coords, full FEA mesh)

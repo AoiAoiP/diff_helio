@@ -38,6 +38,6 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_lsq/",
   "influence_data_path": "data_proxy",
-  "output_dir": "results_900m_200iter_lam0.5",
+  "output_dir": "experiments/runs/900m_200iter_lam0.5",
   "samplePoolPow": 26
 }

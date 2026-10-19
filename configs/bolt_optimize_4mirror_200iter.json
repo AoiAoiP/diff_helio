@@ -33,6 +33,6 @@
   "bolt_margin": 0.08,
   "use_bspline": 0,
   "influence_data_path": "data_proxy",
-  "output_dir": "results_4mirror_200iter",
+  "output_dir": "experiments/runs/4mirror_200iter",
   "samplePoolPow": 26
 }

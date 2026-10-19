@@ -35,7 +35,7 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_lit_senior_auto/",
   "influence_data_path": "data_lit/proxy_senior",
-  "output_dir": "results_lit_senior_s0707",
+  "output_dir": "experiments/runs/lit_senior_s0707",
   "samplePoolPow": 26,
   "gravity_normal_coupling": 1,
   "max_bolt_stroke": 0.06,

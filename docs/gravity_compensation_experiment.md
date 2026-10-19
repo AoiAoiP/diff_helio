@@ -61,7 +61,7 @@ yv = 0.0f;   // ← 重力不进 v 向导数
 > **本节全部定量结论（PV、斜率预算、可补偿率）不受影响；变化的是机制归因与出路方向：
 > 地板的结构旋钮是 margin/悬挑（第一）+ 厚度（第二，缩放轴）+ 螺栓密度（与 margin
 > 存在守恒权衡，组合后生效），而非单独的螺栓密度。**
-> 详见 `docs/phase5_structural_optimization.md` §1.2（原 `phase5_layout_optimization.md`，已并入）。
+> 详见 `docs/archive/phase5_structural_optimization.md` §1.2（原 `phase5_layout_optimization.md`，已并入）。
 
 ![图 1-2　支撑间凹陷剖面与三频带能量分布](img/fig_1_2_sag_compensability.png)
 
@@ -301,7 +301,7 @@ L(h) = L_S95(h) + λ_E·L_energy(h)          （已有，≥900m 保留）
 2. ✅ FEA 抽查（2026-07-30，见 3.7）：South+North 300m × {0°, 29.5°, 58.5°}，proxy(螺栓+重力) vs FEA
    RMS 2.1–3.3mm、shape_corr 0.95–0.98，与历史验证同水平——**地板为真实物理，非 proxy 伪影**。
 3. ✅ 110dir 复核（2026-07-30，见 3.8）：四项判定全过，地板非采样伪影，@110 为终稿数字。
-   布局敏感度 Tier-2 已升格为独立方向：Phase 5 布局扫描（`docs/phase5_structural_optimization.md` §1/§2）。
+   布局敏感度 Tier-2 已升格为独立方向：Phase 5 布局扫描（`docs/archive/phase5_structural_optimization.md` §1/§2）。
 4. ✅ CLAUDE.md 更新（实验日志条目 + 双机校验规程）。
 
 ## 2.4 新增配置键
@@ -405,7 +405,7 @@ c0 未暴露的原因：旧二进制 runValidation 用陈旧表面（bug #2）�
 - **Phase 3 启动**（任务 bash-0vw59byn）：8 组顺序跑批，300m NEWS、36dir、coupling=1、
   comp init（`data/init_comp_36`）、lr=4e-4（已核实 lrComp 分支：tanh 与物理两种模式零点物理步长
   一致，nt 组无需改 lr）。
-- 支线：投稿规划文档重写（`docs/submission_strategy_and_outline.md`：AEI 首选/Applied Energy 备选/
+- 支线：投稿规划文档重写（`docs/paper_strategy.md`：AEI 首选/Applied Energy 备选/
   TVCG 风险）；NCM Model 调研结论（Fast-NCM 为 7.9 万参数 MLP，输入仅标量 σ_S，无法接收面型
   空间结构，不能用于逐面型"理想光斑"预测；可借鉴其 erf 闭式可微渲染与参数拟合管线）。
 
@@ -501,13 +501,13 @@ python scripts/run_fea_validation.py --result-dir results_fw_tanh_a0 --heliostat
 | `results_bound_300m_36/` | B\*@36 结果 |
 | `docs/gravity_compensation_experiment.md` | 本文档（2026-07-30 按"结论/方案/日志/清单"重构） |
 | `docs/gravity_compensation_experiment_DESKTOP.md` | 台式机侧记录 + 笔记本复核作废判定（保留作幻影重力样本） |
-| `docs/submission_strategy_and_outline.md` | 投稿方向分析 + 论文大纲（AEI 首选） |
-| `docs/draft.md` | 论文初稿中文版（摘要+引言+相关工作） |
+| `docs/paper_strategy.md` | 投稿方向分析 + 论文大纲（AEI 首选） |
+| `docs/paper/draft.md` | 论文初稿中文版（摘要+引言+相关工作） |
 | `CLAUDE.md` | Phase 0–3 实验日志条目 + 双机 data_proxy 校验规程（1.6） |
 
 ---
 
-> **下一步**：Phase 4 全部收口。后续方向见 `docs/phase5_structural_optimization.md`
+> **下一步**：Phase 4 全部收口。后续方向见 `docs/archive/phase5_structural_optimization.md`
 > （布局扫描 + 钢材替换可行性 + WoS/ROM 结构优化汇总，原 `phase5_layout_optimization.md`
 > 与 `material_steel_feasibility.md` 已并入）。
 

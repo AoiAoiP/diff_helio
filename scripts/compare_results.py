@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 
 RESULT_DIRS = {
-    "36dir": "results_sundir_cmp_36dir",
-    "110dir": "results_sundir_cmp_110dir",
-    "334dir": "results_sundir_cmp_334dir",
+    "36dir": "experiments/runs/sundir_cmp_36dir",
+    "110dir": "experiments/runs/sundir_cmp_110dir",
+    "334dir": "experiments/runs/sundir_cmp_334dir",
 }
 
 def load_history(result_dir: str) -> dict:

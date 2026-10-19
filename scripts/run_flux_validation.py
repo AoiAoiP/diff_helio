@@ -8,9 +8,9 @@ and creates side-by-side comparison plots.
 
 Usage:
   python scripts/run_flux_validation.py \
-    --result-dir results_4mirror_200iter \
+    --result-dir experiments/runs/4mirror_200iter \
     --heliostat-prefix North \
-    --fea-dir results_4mirror_200iter/fea_validation \
+    --fea-dir experiments/runs/4mirror_200iter/fea_validation \
     --angles 29.5 58.5
 """
 
@@ -126,6 +126,13 @@ def load_gravity_bins(data_dir):
             raw = np.fromfile(path, dtype=np.float32)
             if len(raw) == n_grid:
                 bins[i] = raw
+            elif len(raw) == 3 * n_grid:
+                # v2 三平面 [w, dw/du, dw/dv]（gravity_angles.json "format": "w_du_dv_v2"）
+                # 光斑验证的曲面生成只需 w 平面
+                bins[i] = raw[:n_grid]
+            else:
+                print(f"  WARN: gravity_{ang_int}deg.bin has {len(raw)} floats, "
+                      f"expected {n_grid} or {3*n_grid}")
     return bins, np.array(angles), GS
 
 
@@ -222,6 +229,25 @@ def mirror_tilt_angle(sun_dir, helio_pos, receiver_pos):
     cos_tilt = abs(normal[1])
     tilt_rad = np.arccos(np.clip(cos_tilt, 0.0, 1.0))
     return np.degrees(tilt_rad)
+
+
+def find_fea_csv(fea_dir, angle_deg):
+    """Find the FEA node-dump CSV for an angle, tolerant of naming variants:
+    - integer angles:  node_dump_10deg.csv (data_proxy convention)
+    - decimal angles:  node_dump_295deg.csv (29.5°, run_fea_validation.py legacy)
+                      node_dump_29.5deg.csv / node_dump_10.0deg.csv
+    """
+    cands = []
+    if abs(angle_deg - round(angle_deg)) < 1e-9:
+        cands.append(os.path.join(fea_dir, f"node_dump_{int(round(angle_deg))}deg.csv"))
+    else:
+        cands.append(os.path.join(fea_dir, f"node_dump_{str(angle_deg).replace('.', '')}deg.csv"))
+        cands.append(os.path.join(fea_dir, f"node_dump_{angle_deg}deg.csv"))
+    cands.append(os.path.join(fea_dir, f"node_dump_{angle_deg:.1f}deg.csv"))
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return None
 
 
 def find_closest_sun_direction(target_angle, sun_dirs, helio_pos, receiver_pos):
@@ -331,18 +357,25 @@ def run_flux_dump(surface_file, sun_file, config_path, output_dir, exe):
     env['BEZIER_S95_GPU'] = '1'
 
     print(f"    Running: bezier_opt.exe --dump-flux --config ... --surface-file ...")
-    result = subprocess.run(cmd, cwd=exe_dir, capture_output=True, text=True,
-                           encoding='utf-8', errors='replace',
-                           timeout=300, env=env)
+    # Redirect child stdout/stderr to a log FILE instead of piped capture:
+    # piped stdio requires named pipes, which are forbidden in some sandboxed
+    # environments (EPERM). File redirection works everywhere.
+    log_path = os.path.join(os.path.dirname(surface_file),
+                            'fluxdump_' + os.path.splitext(os.path.basename(surface_file))[0] + '.log')
+    with open(log_path, 'w', encoding='utf-8', errors='replace') as logf:
+        result = subprocess.run(cmd, cwd=exe_dir, stdout=logf, stderr=subprocess.STDOUT,
+                                timeout=300, env=env)
+    with open(log_path, 'r', encoding='utf-8', errors='replace') as logf:
+        stdout = logf.read()
 
     if result.returncode != 0:
-        print(f"    STDOUT (last 500 chars): {result.stdout[-500:]}")
-        print(f"    STDERR (last 500 chars): {result.stderr[-500:]}")
+        print(f"    STDOUT (last 500 chars): {stdout[-500:]}")
+        print(f"    Log: {log_path}")
         raise RuntimeError(f"bezier_opt.exe failed with code {result.returncode}")
 
     # Parse output to find saved flux files
     flux_files = {}
-    for line in result.stdout.splitlines():
+    for line in stdout.splitlines():
         if "Saved flux:" in line:
             path = line.split("Saved flux:")[1].strip().split()[0]
             m = re.search(r'sun(\d+)_flux', os.path.basename(path))
@@ -350,7 +383,7 @@ def run_flux_dump(surface_file, sun_file, config_path, output_dir, exe):
                 flux_files[int(m.group(1))] = path
 
     if not flux_files:
-        print(f"    STDOUT: {result.stdout[-1000:]}")
+        print(f"    STDOUT: {stdout[-1000:]}")
         raise RuntimeError("No flux files found in output")
 
     print(f"    Flux files: {[os.path.basename(p) for p in flux_files.values()]}")
@@ -388,13 +421,57 @@ def compute_s95_area(flux):
     return float(idx + 1)
 
 
-def compute_flux_metrics(flux_proxy, flux_fea):
-    """Compute comparison metrics between two flux distributions."""
-    fp = flux_proxy.ravel().astype(np.float64)
-    ff = flux_fea.ravel().astype(np.float64)
+# Receiver pixel area (cylindrical receiver, matches config 157×50 px, R=10m, H=20m,
+# and main.cpp dump-flux pixelArea = 2πRH/(W·H_px))
+PIXEL_AREA_M2 = (2.0 * np.pi * 10.0 * 20.0) / (157.0 * 50.0)
 
-    # Normalize to same total energy for fair comparison
-    fp = fp / fp.sum() * ff.sum()
+
+def compute_s95_m2(flux):
+    """S95 area in m², same semantics as main.cpp dump-flux inline evaluation:
+    20-round binary search for level; count pixels with f >= level; × pixel area.
+    """
+    f = flux.ravel().astype(np.float64)
+    total = f.sum()
+    if total <= 1e-6:
+        return 0.0
+    low, high, level = 0.0, float(f.max()), 0.0
+    for _ in range(20):
+        mid = (low + high) * 0.5
+        above = f[f > mid].sum()
+        if above / total > 0.95:
+            low = mid
+        else:
+            high = mid
+            level = mid
+    if level > 0.0:
+        count = int((f >= level).sum())
+        return float(count) * PIXEL_AREA_M2
+    return 0.0
+
+
+def compute_flux_metrics(flux_proxy, flux_fea):
+    """Compute comparison metrics between two flux distributions.
+
+    Total energy (W) is computed from the RAW flux sums BEFORE any
+    renormalization (flux is irradiance in W/m², so Σflux × pixel_area = W).
+    Distribution metrics (NRMSE, corr, S95) are computed after normalizing
+    the proxy to the FEA total so they compare spot SHAPE, not interception.
+    """
+    fp_raw = flux_proxy.ravel().astype(np.float64)
+    ff_raw = flux_fea.ravel().astype(np.float64)
+
+    total_proxy_raw = float(fp_raw.sum())
+    total_fea_raw = float(ff_raw.sum())
+    total_proxy_w = total_proxy_raw * PIXEL_AREA_M2
+    total_fea_w = total_fea_raw * PIXEL_AREA_M2
+    energy_diff_pct = (total_proxy_w - total_fea_w) / max(total_fea_w, 1e-10) * 100.0
+
+    # Normalize to same total energy for fair shape comparison
+    if total_fea_raw > 0 and total_proxy_raw > 0:
+        fp = fp_raw / total_proxy_raw * total_fea_raw
+    else:
+        fp = fp_raw
+    ff = ff_raw
 
     diff = fp - ff
     rms = np.sqrt(np.mean(diff ** 2))
@@ -409,6 +486,8 @@ def compute_flux_metrics(flux_proxy, flux_fea):
 
     s95_p = compute_s95_area(fp)
     s95_f = compute_s95_area(ff)
+    s95_p_m2 = compute_s95_m2(fp_raw)
+    s95_f_m2 = compute_s95_m2(ff_raw)
 
     return {
         'nrmse': float(nrmse),
@@ -417,9 +496,20 @@ def compute_flux_metrics(flux_proxy, flux_fea):
         's95_proxy': s95_p,
         's95_fea': s95_f,
         's95_diff_pct': float((s95_p - s95_f) / max(s95_f, 1) * 100),
+        's95_proxy_m2': float(s95_p_m2),
+        's95_fea_m2': float(s95_f_m2),
+        's95_diff_m2': float(s95_p_m2 - s95_f_m2),
+        's95_diff_m2_pct': float((s95_p_m2 - s95_f_m2) / max(s95_f_m2, 1e-10) * 100.0),
         'max_flux': float(max_flux),
-        'total_proxy': float(fp.sum()),
-        'total_fea': float(ff.sum()),
+        'total_proxy_raw': float(total_proxy_raw),
+        'total_fea_raw': float(total_fea_raw),
+        'total_proxy': float(total_proxy_raw),   # legacy field name, raw sum
+        'total_fea': float(total_fea_raw),
+        'total_proxy_w': float(total_proxy_w),
+        'total_fea_w': float(total_fea_w),
+        'energy_diff_w': float(total_proxy_w - total_fea_w),
+        'energy_diff_pct': float(energy_diff_pct),
+        'pixel_area_m2': float(PIXEL_AREA_M2),
     }
 
 
@@ -521,17 +611,18 @@ def plot_flux_comparison(flux_proxy, flux_fea, angle_deg, sun_idx, metrics, out_
     ax_tbl.axis('off')
     tbl = (
         f"Flux Comparison — {angle_deg:.1f}°\n"
-        f"{'='*42}\n"
+        f"{'='*46}\n"
         f"  NRMSE:           {metrics['nrmse']:.6f}\n"
         f"  RMS flux:        {metrics['rms_flux']:.3f} W/m²\n"
         f"  Correlation:     {metrics['corr']:.6f}\n"
-        f"  S95 proxy:       {metrics['s95_proxy']:.0f} px\n"
-        f"  S95 FEA:         {metrics['s95_fea']:.0f} px\n"
-        f"  S95 diff:        {metrics['s95_diff_pct']:+.1f}%\n"
+        f"  S95 proxy:       {metrics['s95_proxy']:.0f} px = {metrics['s95_proxy_m2']:.1f} m²\n"
+        f"  S95 FEA:         {metrics['s95_fea']:.0f} px = {metrics['s95_fea_m2']:.1f} m²\n"
+        f"  ΔS95:            {metrics['s95_diff_m2']:+.1f} m² ({metrics['s95_diff_m2_pct']:+.1f}%)\n"
         f"  Max flux:        {metrics['max_flux']:.1f} W/m²\n"
-        f"  Total proxy:     {metrics['total_proxy']:.0f} W\n"
-        f"  Total FEA:       {metrics['total_fea']:.0f} W\n"
-        f"{'='*42}\n"
+        f"  Total proxy:     {metrics['total_proxy_w']:.0f} W\n"
+        f"  Total FEA:       {metrics['total_fea_w']:.0f} W\n"
+        f"  ΔEnergy:         {metrics['energy_diff_w']:+.1f} W ({metrics['energy_diff_pct']:+.2f}%)\n"
+        f"{'='*46}\n"
     )
     ax_tbl.text(0.05, 0.95, tbl, transform=ax_tbl.transAxes,
                 fontsize=8.5, fontfamily='monospace', va='top',
@@ -645,13 +736,9 @@ def main():
         print(f"  Proxy surface: PV={np.ptp(w_proxy)*1000:.2f}mm")
 
         # 3. Generate FEA surface
-        fea_csv = os.path.join(fea_dir, f"node_dump_{str(angle).replace('.', '')}deg.csv")
-        if not os.path.exists(fea_csv):
-            alt = os.path.join(fea_dir, f"node_dump_{angle:.1f}deg.csv")
-            if os.path.exists(alt):
-                fea_csv = alt
-        if not os.path.exists(fea_csv):
-            print(f"  ERROR: FEA CSV not found: {fea_csv}")
+        fea_csv = find_fea_csv(fea_dir, angle)
+        if fea_csv is None:
+            print(f"  ERROR: FEA CSV not found for {angle}° in {fea_dir}")
             continue
 
         x_local, z_local, w_fea_scatter = fea_csv_to_plate_local(fea_csv, angle)
@@ -755,16 +842,35 @@ def main():
         with open(summary_path, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\n{'='*75}")
-        print(f"  Flux Comparison Summary")
-        print(f"{'='*75}")
-        print(f"  {'Angle':<8s} {'Tilt':<8s} {'NRMSE':>8s} {'Corr':>8s} {'S95_proxy':>10s} {'S95_FEA':>10s} {'ΔS95%':>8s}")
-        print(f"  {'-'*65}")
+        print(f"\n{'='*118}")
+        print(f"  Flux Comparison Summary — FEA vs TPS Proxy")
+        print(f"{'='*118}")
+        print(f"  {'Angle':<7s}{'Tilt':<7s}{'S95 FEA':>9s}{'S95 Proxy':>10s}{'dS95':>9s}{'dS95%':>8s}"
+              f"{'E FEA(W)':>10s}{'E Proxy(W)':>11s}{'dE(W)':>9s}{'dE%':>8s}{'NRMSE':>8s}{'Corr':>8s}")
+        print(f"  {'-'*116}")
         for m in all_results:
-            print(f"  {m['angle_deg']:<8.1f} {m['actual_tilt']:<8.2f} "
-                  f"{m['nrmse']:8.4f} {m['corr']:8.4f} "
-                  f"{m['s95_proxy']:10.0f} {m['s95_fea']:10.0f} {m['s95_diff_pct']:7.1f}%")
-        print(f"  {'='*65}")
+            print(f"  {m['angle_deg']:<7.1f}{m['actual_tilt']:<7.2f}"
+                  f"{m['s95_fea_m2']:9.1f}{m['s95_proxy_m2']:10.1f}{m['s95_diff_m2']:+9.1f}"
+                  f"{m['s95_diff_m2_pct']:+8.1f}"
+                  f"{m['total_fea_w']:10.0f}{m['total_proxy_w']:11.0f}{m['energy_diff_w']:+9.1f}"
+                  f"{m['energy_diff_pct']:+8.2f}{m['nrmse']:8.4f}{m['corr']:8.4f}")
+        print(f"  {'='*118}")
+
+        # CSV export for reports
+        csv_path = os.path.join(out_dir, 'flux_comparison_summary.csv')
+        with open(csv_path, 'w', newline='') as f:
+            import csv as _csv
+            w = _csv.writer(f)
+            w.writerow(['angle_deg', 'actual_tilt', 's95_fea_m2', 's95_proxy_m2', 's95_diff_m2',
+                        's95_diff_m2_pct', 'total_fea_w', 'total_proxy_w', 'energy_diff_w',
+                        'energy_diff_pct', 'nrmse', 'corr', 'sun_idx', 'sun_synthetic'])
+            for m in all_results:
+                w.writerow([m['angle_deg'], m['actual_tilt'], m['s95_fea_m2'], m['s95_proxy_m2'],
+                            m['s95_diff_m2'], m['s95_diff_m2_pct'], m['total_fea_w'],
+                            m['total_proxy_w'], m['energy_diff_w'], m['energy_diff_pct'],
+                            m['nrmse'], m['corr'], m.get('sun_idx', -1),
+                            m.get('sun_synthetic', False)])
+        print(f"\n  Summary CSV: {csv_path}")
 
     print(f"\n=== Done. Output: {out_dir}/ ===")
     for f in sorted(os.listdir(out_dir)):

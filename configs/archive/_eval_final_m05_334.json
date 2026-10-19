@@ -35,7 +35,7 @@
   "bolt_init_file": "auto",
   "bolt_init_dir": "data/init_final/m05/",
   "influence_data_path": "data_proxy_margin/7x5_margin05_fine",
-  "output_dir": "results_final_m05/eval_334_m05best",
+  "output_dir": "experiments/runs/final_m05/eval_334_m05best",
   "samplePoolPow": 26,
   "gravity_normal_coupling": 1,
   "max_bolt_stroke": 0.06
