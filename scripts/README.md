@@ -70,7 +70,19 @@ ANSYS 相关脚本的默认 `ANSYS.exe` 路径是 `L:/Program Files/ANSYS Inc/v2
 
 ---
 
-## 七、新增脚本的规矩
+## 七、`scripts/remote/`（台式机远程访问）
+
+| 脚本 | 作用 |
+|---|---|
+| `check-readiness.ps1` | 只读自检，输出 JSON 与 READY / NOT_READY 判定 |
+| `complete-sshd-setup.ps1` | OpenSSH Server 完整安装（幂等） |
+| `add-laptop-key.ps1` | 把笔记本公钥写入 `administrators_authorized_keys` |
+| `diagnose-sshd-start.ps1` | 诊断 sshd 1067 启动失败 |
+| `fix-sshd-hostkey-owner.ps1` | 修复主机密钥 owner/ACL（`no hostkeys available`） |
+
+细节、Tailscale 拓扑与排障见 `docs/remote_desktop_workflow.md`。
+
+## 八、新增脚本的规矩
 
 1. 数据生成/验证类放 `scripts/`；一次性实验放 `scripts/experiments/`；不要新建第三个层级。
 2. 路径用仓库根相对路径，不要硬编码 `L:/` 或 `D:/`；必须写死时给 `--root` 参数。
