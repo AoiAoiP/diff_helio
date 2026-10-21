@@ -99,3 +99,7 @@ docs/archive/_pre_merge_*/
 # 投稿模板（第三方，体积大，可重新下载）
 docs/els-cas-templates/
 docs/CVM_LaTeX_Template_2025/
+
+# Archived DOCX workspace payload (local only; README stays tracked)
+archive/work_template_2026-10-11/*
+!archive/work_template_2026-10-11/README.md

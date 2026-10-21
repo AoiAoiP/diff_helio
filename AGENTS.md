@@ -50,13 +50,14 @@
 | `data/` | sundir 集（36/110/334/1558）、`ellipse*.txt`、`init*/` 初始螺栓 | 已跟踪 |
 | `configs/` | 23 个正式配置 + `bolt_layouts/`（154 个布局 JSON，含 `density/`、`free/`）+ `archive/` 98 个一次性配置 | 已跟踪 |
 | `experiments/runs/` | 13 个正式运行目录（2026-10-19 从根目录 `results_*` 迁入）+ 1 个迁移冒烟 | 全部可入库；`experiments/INDEX.md` 是唯一台账 |
+| `scripts/` | 数据生成、FEA/光斑验证、对比分析脚本 | 在用；19 个根脚本 + 4 个历史实验 + 7 个已退役，分类见 `scripts/README.md` |
 | `analysis/` | 派生统计表（§5.2–5.4 的数字来源）+ 6 张早期 png | 在用 |
 | `docs/` | 研究文档 9 个 md + `archive/` 归档 + 两份期刊模板 | 在用 |
 | `docs/paper/` | 论文草稿 5 个 `.md` | 未跟踪 |
 | `ref/` | 9 篇 PDF + `literature_index.md` | 被 `.gitignore` 排除 |
 | `archive/` | 退役 Python 管线、ROM 脚本快照 | 只读 |
 | `proxy/` | 早期 TPS Python 实现 | 历史；主线用 `scripts/generate_proxy_model.py` |
-| `test_1/` `demo_scratch/` `work_template/` | 临时 C++ 试验、探针配置、docx 模板 | 与论文无关 |
+| `archive/work_template_2026-10-11/` | 任务书 docx 解包工作区（2026-10-11） | 归档；源 docx 与成品均不在仓库，确认无用后可整目录删 |
 | `skills/` | 3 个上游 skill 仓库（academic-research-skills / claude-autoresearch / Research-Paper-Writing-Skills）+ 自制 `papercraft/` | 来源、提交与升级方式见 `skills/SOURCES.md`；运行时用 `.dsh/skills/` 的副本；上游目录已 gitignore |
 | `.dsh/skills/` `.claude/skills/` | skill 运行副本（7 + 2） | 本机配置，被 gitignore |
 
@@ -243,3 +244,5 @@ Phase 5 结构层（110 方向真值）：边距 m\*=0.05，逐镜 76.16/99.16/1
 | 钢材热膨胀补充实验（待做） | `docs/steel_cte_experiment_guide.md` |
 | 写作规范与 skill 手册 | `docs/paper_strategy.md`、`skills/papercraft/GUIDE.md` |
 | 实验台账 / 图表台账 | `experiments/INDEX.md`、`figures/paper/INDEX.md` |
+| 脚本分拣与用法 | `scripts/README.md`、`archive/scripts_retired_2026-10-19/README.md` |
+| 远程执行 / 台式机自检 | `docs/remote_desktop_workflow.md`、`docs/prompts/desktop_link_readiness.md`、`scripts/remote/check-readiness.ps1` |
