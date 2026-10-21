@@ -246,3 +246,4 @@ Phase 5 结构层（110 方向真值）：边距 m\*=0.05，逐镜 76.16/99.16/1
 | 远程访问（Tailscale + OpenSSH）、排障与台式机自检 | `docs/remote_desktop_workflow.md`、`docs/prompts/desktop_link_readiness.md`、`scripts/remote/` |
 | 实验台账 / 图表台账 | `experiments/INDEX.md`、`figures/paper/INDEX.md` |
 | 脚本分拣与用法 | `scripts/README.md`、`archive/scripts_retired_2026-10-19/README.md` |
+| 论文写作会话开工指引 | `docs/prompts/paper_writing_session.md` |
