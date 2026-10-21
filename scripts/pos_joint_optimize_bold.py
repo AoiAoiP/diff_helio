@@ -81,7 +81,7 @@ def main():
                     help="min relative Loss improvement to accept a move")
     ap.add_argument("--sundir", choices=["36", "110"], default="36")
     ap.add_argument("--template", default="configs/_fw_tanh_a0_110.json")
-    ap.add_argument("--out-root", default="results_pos_bold")
+    ap.add_argument("--out-root", default="experiments/runs/pos_bold")
     args = ap.parse_args()
 
     template = json.load(open(os.path.join(ROOT, args.template)))

@@ -104,7 +104,7 @@ def main():
         (91, 259.55, "sparse v4"),
         (74, 462.76, "sparse v3 (edge gap)"),
     ]
-    p63 = "results_truth/9x7_m05/optimization_summary.csv"
+    p63 = "experiments/runs/truth/9x7_m05/optimization_summary.csv"
     if os.path.exists(p63):
         import csv
         with open(p63) as f:

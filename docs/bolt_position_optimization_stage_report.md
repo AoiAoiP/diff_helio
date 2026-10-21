@@ -3,7 +3,7 @@
 > **状态**：已收口存档（2026-08-10）。本支线决定**不进论文主线**（按下不表），本文档为自包含的阶段性实验报告，供日后重启或设计文档引用。
 > **范围**：Phase 5.4「自由螺栓布局的稀疏优化与位置精炼」（2026-08-03～08-06）与 Phase 6「栓位 × 行程联合端到端优化」（2026-08-06～08-07）。
 > **数字口径约定**：S95 为 300m 单镜年均光斑面积（m²），N/E/S/W 四镜分别统计。**真值** = ANSYS 细子步（`--nsubst 50,500,50`）重力 bins + 渲染器复跑；**ROM 口径** = 已退役的 von Kármán 板 ROM 评估器（2026-08-06 退役删除，封存于 `archive/rom_retired_2026-08-06/`），ROM 数字仅作实验日志保留，全部最终结论以真值为准。Phase 6 主批为 36dir 口径。
-> **主要出处**：`docs/phase5_report.md` §3.3 / §3.4 / 补记 2；`docs/phase5_4_bolt_position_optimization.md`；`docs/phase5_4_implementation_plan.md`；`docs/phase6_pos_height_joint.md`（含「Phase 6 实验结果」节）。
+> **主要出处**：`docs/phase5_report.md` §3.3 / §3.4 / 补记 2；`docs/bolt_position_optimization_stage_report.md`；`docs/bolt_position_optimization_stage_report.md`；`docs/bolt_position_optimization_stage_report.md`（含「Phase 6 实验结果」节）。
 
 ---
 
@@ -13,17 +13,17 @@
 
 Phase 0–4 的诊断闭环确立了「固定布局下螺栓行程调节已到顶」：TPS 影响张量对重力畸变结构性正交，光学端到端回收率仅 13–16%，其余 84–87% 的 S95 差距是支撑布局/玻璃刚度决定的结构性硬地板（`docs/phase5_report.md` §1.1）。Phase 5 遂把结构参数变成优化变量，沿「margin 扫描 → 密度扫描 → 逐栓位置」三级推进：margin 是第一旋钮（m\*=0.05，逐镜红利 −26%~−29%），密度是第二旋钮（9×7=63 栓 @m05 甜点）。位置是第三个、也是最后一个未榨干的自由度。
 
-Phase 5.4 的科学问题（`docs/phase5_4_bolt_position_optimization.md` §1）：
+Phase 5.4 的科学问题（`docs/bolt_position_optimization_stage_report.md` §1）：
 
 1. **均匀性是否最优？** 悬挑带承载 80–90% 斜率能量——螺栓集中边缘、中心稀疏，能否以更少的栓达到相同的 S95？
 2. **非对称镜位是否需要专用布局？** East/West 镜全年穿越 ~45–46° NLGEOM 变号区，x/z 向最优栓距可能不同。
 3. **与文献对话**：颜健组「N≥11 后改善可忽略」建立在均匀间距前提上；若栓可自由放置，递减回报是否取决于*位置*而非*数量*？核心假设为「**位置 >> 数量**」。
 
-Phase 6 在 5.4 收口的基础上再进一步（`docs/phase6_pos_height_joint.md` §1）：5.4 只动过「删哪些栓」（组合）与「整线平移」（12/20 DOF），从未让单栓自由；且 A4 的 −0.8% 只是线级残余，逐栓级未知。Phase 6 对全部 Nb 根栓的**位置 (x_b, z_b) 与行程 h_b 同时端到端优化**，期望产出随镜位（NEWS）不同的非对称布局。
+Phase 6 在 5.4 收口的基础上再进一步（`docs/bolt_position_optimization_stage_report.md` §1）：5.4 只动过「删哪些栓」（组合）与「整线平移」（12/20 DOF），从未让单栓自由；且 A4 的 −0.8% 只是线级残余，逐栓级未知。Phase 6 对全部 Nb 根栓的**位置 (x_b, z_b) 与行程 h_b 同时端到端优化**，期望产出随镜位（NEWS）不同的非对称布局。
 
 ### 1.2 与论文主线的关系、为何收口
 
-论文叙事主线为「理想曲面无工程参考价值 → 嵌入物理信息的可微渲染优化 → 重力形变下最优面型」，结构层只保留 margin 守恒律（+ 地板认证 + 逐镜红利）作为 AEI 主叙事，密度甜点与稀疏规则降级为设计建议节。位置优化支线的最终结论是**负结果封顶**——「位置 >> 数量」强形式证伪、弱形式红利有限（−7.7%）、连续精修残余 ~0.5–0.9%——其价值主要是设计规则（均匀网格近优）而非新红利源，不足以支撑论文主线篇幅，故收口存档。两种结果本均可发表（门体系的设计意图，`docs/phase5_4_bolt_position_optimization.md` §4），本支线实际落在「证伪/封顶」一侧。
+论文叙事主线为「理想曲面无工程参考价值 → 嵌入物理信息的可微渲染优化 → 重力形变下最优面型」，结构层只保留 margin 守恒律（+ 地板认证 + 逐镜红利）作为 AEI 主叙事，密度甜点与稀疏规则降级为设计建议节。位置优化支线的最终结论是**负结果封顶**——「位置 >> 数量」强形式证伪、弱形式红利有限（−7.7%）、连续精修残余 ~0.5–0.9%——其价值主要是设计规则（均匀网格近优）而非新红利源，不足以支撑论文主线篇幅，故收口存档。两种结果本均可发表（门体系的设计意图，`docs/bolt_position_optimization_stage_report.md` §4），本支线实际落在「证伪/封顶」一侧。
 
 ---
 
@@ -31,7 +31,7 @@ Phase 6 在 5.4 收口的基础上再进一步（`docs/phase6_pos_height_joint.m
 
 ### 2.1 G0–G5 门体系（Phase 5.4）
 
-策略文档定义六门（`docs/phase5_4_bolt_position_optimization.md` §3），实施方案重排为双轨并修订为 G0/G1'/G2/G3/G4/G5（`docs/phase5_4_implementation_plan.md` §6）：
+策略文档定义六门（`docs/bolt_position_optimization_stage_report.md` §3），实施方案重排为双轨并修订为 G0/G1'/G2/G3/G4/G5（`docs/bolt_position_optimization_stage_report.md` §6）：
 
 | 门 | 内容 | 判据 | 实际结果 |
 |:---:|---|---|---|
@@ -42,7 +42,7 @@ Phase 6 在 5.4 收口的基础上再进一步（`docs/phase6_pos_height_joint.m
 | G4 | 同 N 受控对照（非均匀 vs 同 N 均匀，控 N 单变量） | 非均匀显著优于同 N 均匀 | **证伪**：均匀 9×8=72 逐镜优于贪心 74（§3.3.3） |
 | G5 | 真值终裁 | 红利方向 评估器↔真值一致 | **通过**（v4-91 真值逐镜 N −7.3%、E −9.4%、S −13.3%、W −0.1% vs 7×5 m05 基线）（附录 A） |
 
-双轨架构（`docs/phase5_4_implementation_plan.md` §2.3）：**Track B（主线）稀疏化免梯度**——存在性变量只改 BC 不动网格，headline 问题不依赖位置梯度；**Track A（副线）位置梯度精炼**——隐函数定理 `∂d/∂π = K⁻¹(∂f/∂π − ∂K/∂π·d)` 链式传播至 S95。两轨在「幸存者位置精炼」（A4）汇合。
+双轨架构（`docs/bolt_position_optimization_stage_report.md` §2.3）：**Track B（主线）稀疏化免梯度**——存在性变量只改 BC 不动网格，headline 问题不依赖位置梯度；**Track A（副线）位置梯度精炼**——隐函数定理 `∂d/∂π = K⁻¹(∂f/∂π − ∂K/∂π·d)` 链式传播至 S95。两轨在「幸存者位置精炼」（A4）汇合。
 
 关键基建（§3.3.1）：布局 schema 三形式（grid/lines/free，`scripts/layout_utils.py`）；渲染器 `kMaxBolts` 50→128、`loadBin` 尺寸硬校验、`bolt_l1_lambda` L1 近端、`dump_surface_grad` 面梯度 dump。**幻影支撑纪律**：渲染器内置行程零 ≠ 移除栓——支撑移除只通过外环重力场重解生效，一切稀疏结论必须过外环重解才是物理诚实的。
 
@@ -52,7 +52,7 @@ Phase 6 在 5.4 收口的基础上再进一步（`docs/phase6_pos_height_joint.m
 
 ### 2.3 Phase 6：TPS 位置灵敏度直接法（零 C++ 改动）
 
-Phase 6 不复活 ROM，位置梯度走 **TPS 红利基的伴随灵敏度**（`docs/phase6_pos_height_joint.md` §2.2）：前向 `w(r) = w₀(θ; π₀) + Σ_b h_b·φ_b(r; π)`，φ_b 为 TPS 基数样条（FEA 验证过的生产代理）；φ_b 对栓位 π 光滑（TPS 线性系统 `A(π)·[c_b; d_b] = [e_b; 0]`），由渲染器 dump 的逐太阳面梯度收缩得 `∂L/∂π`（一次伴随求解/栓，NB 次 38–102 阶回代，numpy 秒级）。这是 RBF 网格变形/形状优化领域的标准工具（离散伴随 + RBF 节点灵敏度），且无需重验证前向物理。
+Phase 6 不复活 ROM，位置梯度走 **TPS 红利基的伴随灵敏度**（`docs/bolt_position_optimization_stage_report.md` §2.2）：前向 `w(r) = w₀(θ; π₀) + Σ_b h_b·φ_b(r; π)`，φ_b 为 TPS 基数样条（FEA 验证过的生产代理）；φ_b 对栓位 π 光滑（TPS 线性系统 `A(π)·[c_b; d_b] = [e_b; 0]`），由渲染器 dump 的逐太阳面梯度收缩得 `∂L/∂π`（一次伴随求解/栓，NB 次 38–102 阶回代，numpy 秒级）。这是 RBF 网格变形/形状优化领域的标准工具（离散伴随 + RBF 节点灵敏度），且无需重验证前向物理。
 
 架构为两时间尺度双层循环（§3）：内环固定 π 优化 h（GPU 100-iter Adam）；外环 dump → 伴随收缩 → Adam-π 步进（约束投影）→ TPS bins 重生成（<1s）→ 回内环；终裁走 ANSYS 细子步真值锚。重力场在内外环期间冻结于初值真值 bins，其量级由 G0b 门量化（见 §4.1）。约束：栓距 ≥0.8m、栓位距板边 ≥0.35m、边缘带相邻栓距 >1.2m 拒步（防 v3 型边缘天窗）；不设对称性约束。
 
@@ -136,7 +136,7 @@ v4 协议：36 周边栓全保、仅剪内部（λ=0.1，逐轮 8 栓）（ROM �
 
 ## 4. Phase 6 实验与结果（2026-08-06～08-07）
 
-> 出处：`docs/phase6_pos_height_joint.md`「Phase 6 实验结果」节。主批口径：36dir、North/West 双镜、渲染器 S95（重力冻结于初值真值 bins）。
+> 出处：`docs/bolt_position_optimization_stage_report.md`「Phase 6 实验结果」节。主批口径：36dir、North/West 双镜、渲染器 S95（重力冻结于初值真值 bins）。
 
 ### 4.1 门验证（G0a / G0b / G1 通过）
 
@@ -191,7 +191,7 @@ v4 协议：36 周边栓全保、仅剪内部（λ=0.1，逐轮 8 栓）（ROM �
 1. **110dir 复核**（未做）：`scripts/pos_joint_optimize_bold.py --mirror {N,E,S,W} --start-layout configs/bolt_layouts/free/uniform_10x7_m05.json --steps 4 --sundir 110 --ladder "0.10,0.07,0.05,0.03,0.01" --accept 0.0`（~1h/镜），确认 36dir 结论在 110dir 成立。
 2. **ANSYS 真值终裁**（未做）：对收敛布局 `configs/bolt_layouts/free/p6b_*_s0{K}_0{delta}.json` 跑 `ansys_gravity.py --nsubst 50,500,50` 出真值 bins，同协议渲染复跑，与均匀 10×7/9×7 真值对比。
 3. **密度面补点**（可选）：uniform_10×7 的真值 bins + 110dir 复跑，纳入 `phase5_report.md` §3.2.2 密度表。
-4. **判据（升级 vs 收口）**：110dir 位置效应 **>1% 且方向一致 → 升级为正式红利**写入 `phase5_report.md`；**≤0.5% → 收口进设计规则**（「均匀网格 + m05 + 密度面」）。（交接提示词原文见 `docs/phase6_pos_height_joint.md`「下一阶段启动提示词」节。）
+4. **判据（升级 vs 收口）**：110dir 位置效应 **>1% 且方向一致 → 升级为正式红利**写入 `phase5_report.md`；**≤0.5% → 收口进设计规则**（「均匀网格 + m05 + 密度面」）。（交接提示词原文见 `docs/bolt_position_optimization_stage_report.md`「下一阶段启动提示词」节。）
 5. 其他 Phase 5 遗留（与本支线相关）：99 栓 E/W 镜退化归因（网格-镜位交互 vs 高维优化动力学）未决；真正逐栓 70 维自由化的 provenance 扩展已判定不值得投入（Track A 关闭）。
 
 ---
@@ -202,7 +202,7 @@ v4 协议：36 周边栓全保、仅剪内部（λ=0.1，逐轮 8 栓）（ROM �
 
 | 类别 | 路径 | 说明 |
 |---|---|---|
-| 方案/结果文档 | `docs/phase5_report.md`（§3.3、补记、补记 2）；`docs/phase5_4_bolt_position_optimization.md`；`docs/phase5_4_implementation_plan.md`；`docs/phase6_pos_height_joint.md` | 本报告全部数字的一手出处 |
+| 方案/结果文档 | `docs/phase5_report.md`（§3.3、补记、补记 2）；`docs/bolt_position_optimization_stage_report.md`；`docs/bolt_position_optimization_stage_report.md`；`docs/bolt_position_optimization_stage_report.md` | 本报告全部数字的一手出处 |
 | 布局文件 | `configs/bolt_layouts/free/` | v4 终局 `v4_best_91.json`、v4 末轮 `v4_final_79.json`、A4 各步 `a4_step0{1..4}.json`（最优 step03）、v3 贪心各轮 `sparse_v3_round0*.json`、G1' 扰动布局 `p{1,2,3}_*.json`、G0b `g0b_*.json`、Phase 6 小步长版 `p6_*_s*.json`、bold 版 `p6b_{north,west}_s*_0*.json`、均匀初值 `uniform_{8x8,9x8,10x7}_m05.json` |
 | 轨迹 CSV | `analysis/sparse_path_v3.csv`（v4 边缘保护轨迹）、`analysis/sparse_path_v3_B3v3.csv`（v3 贪心轨迹）、`analysis/sparse_path.csv`、`sparse_path_r00_lam0p1.csv`（早期 λ 探索）；`analysis/a4_refine_path.csv`（A4 轨迹）；`analysis/pos_joint_path_{north,east,west}.csv`（P6 小步长版）、`analysis/pos_joint_bold_path_{north,west}.csv`（bold 版）；`analysis/line_layout_traj{,_v2}.csv`（A2 线级 ROM 试点） | |
 | 图件 | `analysis/figures/fig54_sparse_layouts.png`（v3/v4 布局对比）、`fig54_layout_surfaces.png`（六布局重力/斜率场）、`fig54_density_curve.png`、`fig54_a4_steps.png`、`fig54_sparse_rounds.png`、`fig_p6_results.png` | |
@@ -232,5 +232,5 @@ v4 协议：36 周边栓全保、仅剪内部（λ=0.1，逐轮 8 栓）（ROM �
 | 200-iter 公平口径合计 9×7=242.11、v4-91=252.52、11×9=264.57；v3-74 合计 462.76（100-iter） | `phase5_report.md` 补记（2026-08-05 深夜） |
 | A4 轨迹（266.42→264.24，−0.8%，4 步饱和）；梯度 z:8=−170.9、x:10=−95.5 | `phase5_report.md` 补记 2；`analysis/a4_refine_path.csv` |
 | G0 12/12、rel_err ~3e-4；G2 precision/recall 1.000/1.000；G1' 幅值偏差 1.3–2.5× | `phase5_report.md` §3.3.1、附录 A |
-| G0a cos=1.000000、norm_rel=3.4e-4；G0b 0.18mrad@10°、重力通道小 4×；G1 +832 vs +465 | `phase6_pos_height_joint.md`「实验结果」§1 |
-| 四初值批表（46.499→46.059 等）；精修 −0.2~−0.45 m²（~0.5–0.9%）；10×7 最优 N 45.81 / W 61.05 | `phase6_pos_height_joint.md`「实验结果」§2 |
+| G0a cos=1.000000、norm_rel=3.4e-4；G0b 0.18mrad@10°、重力通道小 4×；G1 +832 vs +465 | 本报告 §4.1 |
+| 四初值批表（46.499→46.059 等）；精修 −0.2~−0.45 m²（~0.5–0.9%）；10×7 最优 N 45.81 / W 61.05 | 本报告 §4.3 |

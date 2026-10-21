@@ -8,7 +8,7 @@
 
 ## 1. 科学问题与动机
 
-材料线目前只考察了弹性参数（E/ν/ρ/t）对重力形变的影响，结论是「材料/厚度 = 逐角度纯缩放轴」（见 `analysis/material_swap_report.md` 与 `docs/phase5_structural_optimization.md` §2.3/§3.2）。但真实定日镜不是单一材料板：它是**玻璃反射层 + 钢背板 + 胶层的层合结构**。当环境温度或日照导致板体升温时，两种材料的热膨胀系数（CTE）失配会在层合板内产生**热弯曲（thermal bow）**——这是与重力正交、且材料线从未覆盖的形变源。
+材料线目前只考察了弹性参数（E/ν/ρ/t）对重力形变的影响，结论是「材料/厚度 = 逐角度纯缩放轴」（见 `analysis/material_swap_report.md` 与 `docs/archive/phase5_structural_optimization.md` §2.3/§3.2）。但真实定日镜不是单一材料板：它是**玻璃反射层 + 钢背板 + 胶层的层合结构**。当环境温度或日照导致板体升温时，两种材料的热膨胀系数（CTE）失配会在层合板内产生**热弯曲（thermal bow）**——这是与重力正交、且材料线从未覆盖的形变源。
 
 物理量级（全部**需文献核实**，下列数值仅供数量级参考、来源存疑）：
 
@@ -253,4 +253,4 @@ python scripts/material_swap_analysis.py \
 | `configs/archive/_steel_9x7_t5_eval334.json` | 评估配置母本（334dir，iterations=1） |
 | `configs/archive/_steel_9x7_t5_200i.json` | 优化配置母本（110dir，200 iter） |
 | `data_proxy_steel/9x7_steel_t5_m05_fine/` | 钢 t5 纯重力 bins（对照组） |
-| `docs/phase5_structural_optimization.md` §2.3/§3.2/§3.8 | 材料线结论与粗子步教训原始记录 |
+| `docs/archive/phase5_structural_optimization.md` §2.3/§3.2/§3.8 | 材料线结论与粗子步教训原始记录 |

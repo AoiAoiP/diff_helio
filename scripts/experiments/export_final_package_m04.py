@@ -3,10 +3,10 @@
 # vs compensated). Parameterized by margin tag:
 #
 #   python scripts/export_final_package_m04.py [mtag] [bins] [rerun] [out] [layout]
-#   default: m04 data_proxy_margin/7x5_margin04 results_g5truth/rerun_m04 \
-#            results_final_m04 configs/bolt_layouts/7x5_margin04.json
-#   m5 ver.: m05 data_proxy_margin/7x5_margin05_fine results_g5truth/rerun_m05_fine \
-#            results_final_m05 configs/bolt_layouts/7x5_margin05.json
+#   default: m04 data_proxy_margin/7x5_margin04 experiments/runs/g5truth/rerun_m04 \
+#            experiments/runs/final_m04 configs/bolt_layouts/7x5_margin04.json
+#   m5 ver.: m05 data_proxy_margin/7x5_margin05_fine experiments/runs/g5truth/rerun_m05_fine \
+#            experiments/runs/final_m05 configs/bolt_layouts/7x5_margin05.json
 #
 # Surfaces use pipeline convention: w(x,z;theta) = g_theta(x,z) + sum_b h_b*phi_b
 # with h_b = h_pipe from BEST_bolts.txt (renderer-exact). Stroke table lists
@@ -27,9 +27,9 @@ MTAG = sys.argv[1] if len(sys.argv) > 1 else "m04"
 BINS = os.path.join(ROOT, sys.argv[2] if len(sys.argv) > 2
                     else "data_proxy_margin/7x5_margin04")
 RERUN = os.path.join(ROOT, sys.argv[3] if len(sys.argv) > 3
-                     else "results_g5truth/rerun_m04")
+                     else "experiments/runs/g5truth/rerun_m04")
 OUT = os.path.join(ROOT, sys.argv[4] if len(sys.argv) > 4
-                   else "results_final_m04")
+                   else "experiments/runs/final_m04")
 LAYOUT = os.path.join(ROOT, sys.argv[5] if len(sys.argv) > 5
                       else "configs/bolt_layouts/7x5_margin04.json")
 W, L, GS = 12.84, 9.45, 32

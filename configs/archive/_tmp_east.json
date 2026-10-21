@@ -8,6 +8,6 @@
   "bolt_init_file": "auto", "bolt_init_dir": "data/init_lsq/",
   "sun_type": "buie", "csr": 0.01,
   "gravity_normal_coupling": 0,
-  "output_dir": "results_tmp_east",
+  "output_dir": "experiments/runs/tmp_east",
   "samplePoolPow": 26
 }

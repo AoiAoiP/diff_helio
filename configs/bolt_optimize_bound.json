@@ -23,6 +23,6 @@
   "disable_gravity": 1,
   "gravity_normal_coupling": 0,
   "lambda_energy": 0.0,
-  "output_dir": "results_bound",
+  "output_dir": "experiments/runs/bound",
   "samplePoolPow": 26
 }

@@ -35,7 +35,7 @@
   "bolt_init_file": "",
   "bolt_init_dir": "data/init_comp/",
   "influence_data_path": "data_proxy_margin/7x5_margin05_fine",
-  "output_dir": "results_truth/7x5_m05_200i",
+  "output_dir": "experiments/runs/truth/7x5_m05_200i",
   "samplePoolPow": 26,
   "gravity_normal_coupling": 1,
   "max_bolt_stroke": 0.06,

@@ -29,10 +29,15 @@ Thumbs.db
 # Claude / AI assistant
 .claude/
 
+# DeepSeek Harness local config (skills copied here are derived from .claude/skills + third-party repos)
+.dsh/
+
 # Third-party libraries (fetched by CMake FetchContent)
 third_party/
 
 # Experimental results
+# 2026-10-19: 运行输出统一改为 experiments/runs/（入库）。下面的 results_*/ 仅作护栏，
+# 防止旧约定（根目录 results_xxx/）复活；新目录不要再加回忽略列表。
 results/
 results_*/
 validation_*/
@@ -75,3 +80,26 @@ data_proxy_g0b/
 data_proxy_g1p/
 data_rom_sparse/
 data_lit/
+
+# Vendored research skill clones（各自带 .git；DSH 运行时用 .dsh/skills 的副本）
+# 来源与提交见 skills/SOURCES.md。skills/papercraft/ 是自制 skill，照常入库。
+skills/academic-research-skills/
+skills/claude-autoresearch/
+skills/Research-Paper-Writing-Skills/
+
+# 与论文主线无关的临时物（保留在磁盘，不入库）
+demo_scratch/
+work_template/
+build_renwushu.py
+build_*.log
+
+# 归档前的原始文档备份（仅本地回滚用，2026-10-19）
+docs/archive/_pre_merge_*/
+
+# 投稿模板（第三方，体积大，可重新下载）
+docs/els-cas-templates/
+docs/CVM_LaTeX_Template_2025/
+
+# Archived DOCX workspace payload (local only; README stays tracked)
+archive/work_template_2026-10-11/*
+!archive/work_template_2026-10-11/README.md

@@ -1431,7 +1431,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         m_useMSELoss = m_cfg.enableMSELoss;
         if (m_useMSELoss) {
             float dist = std::sqrt(hc.position[0]*hc.position[0]+hc.position[1]*hc.position[1]+hc.position[2]*hc.position[2]);
-            std::string idealPath = "results/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
+            std::string idealPath = "experiments/runs/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
             std::ifstream f(idealPath, std::ios::binary);
             if (f) {
                 f.seekg(0, std::ios::end);
@@ -1522,7 +1522,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
                         if (di == 0) {
                             const char *tag = (m_dbgEvalRound == 0) ? "init" : "iter0";
                             auto dumpBin = [&](const char *name, const float *p, size_t k) {
-                                std::string path = "results_tmp_n150/" + std::string(name) + "_" + tag + ".bin";
+                                std::string path = "experiments/runs/tmp_n150/" + std::string(name) + "_" + tag + ".bin";
                                 std::ofstream ofs(path, std::ios::binary);
                                 ofs.write((const char*)p, k * sizeof(float));
                             };
@@ -1559,7 +1559,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
             if (m_cfg.enableMSELoss) {
 
                 float dist = std::sqrt(hc.position[0]*hc.position[0]+hc.position[1]*hc.position[1]+hc.position[2]*hc.position[2]);
-                std::string rawPath = "results/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
+                std::string rawPath = "experiments/runs/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
                 std::ifstream check(rawPath);
                 if (!check) {
                     std::ofstream ofs(rawPath, std::ios::binary);
@@ -1858,7 +1858,7 @@ OptimizationResult BezierPipeline::optimize(const HeliostatConfig &hc,
         // Save initial flux as raw binary (convert to NPY via Python)
         if (m_cfg.enableMSELoss) {
             float dist = std::sqrt(hc.position[0]*hc.position[0]+hc.position[1]*hc.position[1]+hc.position[2]*hc.position[2]);
-            std::string rawPath = "results/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
+            std::string rawPath = "experiments/runs/" + hc.name + "_" + std::to_string((int)dist) + "m_sun0_flux.bin";
             std::ifstream check(rawPath);
             if (!check) {
                 std::ofstream ofs(rawPath, std::ios::binary);

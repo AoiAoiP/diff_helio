@@ -20,6 +20,6 @@
   "sun_type": "buie",
   "csr": 0.01,
   "gravity_normal_coupling": 0,
-  "output_dir": "results_coupling_eval",
+  "output_dir": "experiments/runs/coupling_eval",
   "samplePoolPow": 26
 }

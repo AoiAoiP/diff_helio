@@ -11,6 +11,6 @@
   "bolt_init_file": "auto", "bolt_init_dir": "data/init_lsq/",
   "sun_type": "buie", "csr": 0.01,
   "gravity_normal_coupling": 1,
-  "output_dir": "results_ab_quick",
+  "output_dir": "experiments/runs/ab_quick",
   "samplePoolPow": 26
 }

@@ -4,7 +4,7 @@
 # interpolated at that sun's tilt + bolt influence), one mirror per run.
 #
 #   python scripts/dump_final_spots.py [mtag]     (default m04; mtag=m05 uses
-#   configs/_dump_final_m05.json, data/init_final/m05/, results_final_m05/)
+#   configs/_dump_final_m05.json, data/init_final/m05/, experiments/runs/final_m05/)
 import os, sys, json, subprocess, shutil, time
 import numpy as np
 import matplotlib
@@ -24,7 +24,7 @@ ELLIPSE = {
     "South": "South 0.0 0.0 300.0 5.83e-4 9.18e-4 0.003e-4\n",
     "West": "West -300.0 0.0 0.0 6.57e-4 8.21e-4 -0.67e-4\n",
 }
-OUT = os.path.join(ROOT, f"results_final_{MTAG}")
+OUT = os.path.join(ROOT, f"experiments/runs/final_{MTAG}")
 N_SUN = 3
 
 

@@ -22,23 +22,23 @@ Prerequisites:
 Usage:
   # APDL vs Proxy only (2-way, default)
   python scripts/post_fea_validation.py \\
-      --stroke-file results_4mirror_200iter/North_300m_STROKE_bolts.txt \\
+      --stroke-file experiments/runs/4mirror_200iter/North_300m_STROKE_bolts.txt \\
       --angles 29.5 58.5
 
   # Full 3-way: APDL vs GUI vs Proxy
   python scripts/post_fea_validation.py \\
-      --stroke-file results_4mirror_200iter/North_300m_STROKE_bolts.txt \\
+      --stroke-file experiments/runs/4mirror_200iter/North_300m_STROKE_bolts.txt \\
       --angles 29.5 58.5 \\
       --gui-csv train_data/my_gui_29.5deg.csv train_data/my_gui_58.5deg.csv
 
   # Dry-run: generate APDL only, skip ANSYS
   python scripts/post_fea_validation.py \\
-      --stroke-file results_4mirror_200iter/North_300m_STROKE_bolts.txt \\
+      --stroke-file experiments/runs/4mirror_200iter/North_300m_STROKE_bolts.txt \\
       --angles 29.5 --dry-run
 
   # Auto-discover stroke file from result directory
   python scripts/post_fea_validation.py \\
-      --result-dir results_4mirror_200iter --heliostat-prefix North \\
+      --result-dir experiments/runs/4mirror_200iter --heliostat-prefix North \\
       --angles 29.5 58.5
 """
 
